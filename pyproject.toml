@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "saga"
+version='0.0.1'
+requires-python = ">=3.7"
+description='"'
+authors = [
+    { name = "Зорин Никита Евгеньевич", email = "nikita00zorinnn@mail.ru" },
+]
+classifiers = [
+    "Typing :: Typed",
+]
+
+dependencies = [
+]
+
+[project.optional-dependencies]
+tests = [
+    "pytest~=7.2",
+]
+mypy = [
+    "mypy~=1.1",
+    "mypy-extensions~=1.0",
+]
+
+[tool.mypy]
+strict = true
+
+[tool.pytest.ini_options]
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+]
