@@ -42,7 +42,7 @@ class SagaWorker:
         return WorkerJob(self._compensate, f, *args, **kwargs)
 
     def compensate(self) -> 'SagaWorker':
-        self._compensate = SagaCompensate()
+        # метод используется только для явного указания того, чтоб будет выполняться компенсация
         return self
 
     def __enter__(self) -> 'SagaWorker':
@@ -52,6 +52,7 @@ class SagaWorker:
                  exc_tb: Optional[TracebackType]) -> None:
         if exc_type is not None:
             self._compensate.run()
+        self._compensate.clear()
 
 
 class SagaCompensate:
@@ -60,6 +61,9 @@ class SagaCompensate:
 
     def add_compensate(self, f: Callable[P, None], *args: P.args, **kwargs: P.kwargs) -> None:
         self._compensations.append((f, args, kwargs))
+
+    def clear(self) -> None:
+        self._compensations.clear()
 
     def run(self) -> None:
         """
