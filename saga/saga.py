@@ -2,7 +2,7 @@ import functools
 import multiprocessing.pool
 import os
 from collections.abc import Callable
-from typing import ParamSpec, Optional, Concatenate, TypeVar, Generic, Tuple, List
+from typing import ParamSpec, Optional, Concatenate, TypeVar, Generic, Tuple, List, Dict, Any
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -54,7 +54,7 @@ class SagaWorker:
 
 class SagaCompensate:
     def __init__(self) -> None:
-        self._compensations: List[Tuple[Callable[P, None], P.args, P.kwargs]] = []
+        self._compensations: List[Tuple[Callable[..., None], Tuple[Any, ...], Dict[str, Any]]] = []
 
     def add_compensate(self, f: Callable[P, None], *args: P.args, **kwargs: P.kwargs) -> None:
         self._compensations.append((f, args, kwargs))
