@@ -17,18 +17,25 @@ class WorkerJob(Generic[T]):
         self._f = f
         self._args = args
         self._kwargs = kwargs
-        self._compensation: Optional[Callable[[T], None]] = None
+        self._compensation: Optional[Callable[Concatenate[T, P], None]] = None
+        self._compensation_args: Tuple[Any, ...] = ()
+        self._compensation_kwargs: Dict[str, Any] = {}
 
     def run(self) -> T:
         r = self._f(*self._args, **self._kwargs)
         # Здесь должно быть сохранение результата f, для того, чтобы получить его в случае
         # непредвиденного завершения работы
         if self._compensation is not None:
-            self._compensate.add_compensate(self._compensation, r)
+            self._compensate.add_compensate(self._compensation,
+                                            *(r, *self._compensation_args),
+                                            **self._compensation_kwargs)
         return r
 
-    def with_compensation(self, f: Callable[[T], None]) -> 'WorkerJob[T]':
+    def with_compensation(self, f: Callable[Concatenate[T, P], None], *args: P.args,
+                          **kwargs: P.kwargs) -> 'WorkerJob[T]':
         self._compensation = f
+        self._compensation_args = args
+        self._compensation_kwargs = kwargs
         return self
 
 
@@ -38,7 +45,7 @@ class SagaWorker:
         self.idempotent_key = idempotent_key
         self._compensate = SagaCompensate()
 
-    def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs,) -> WorkerJob[T]:
+    def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> WorkerJob[T]:
         return WorkerJob(self._compensate, f, *args, **kwargs)
 
     def compensate(self) -> 'SagaWorker':
