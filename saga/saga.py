@@ -31,8 +31,9 @@ class WorkerJob(Generic[T]):
             # Сохранить информацию об исключении
             raise
 
-    def with_compensation(self, f: Callable[[T], None]) -> None:
+    def with_compensation(self, f: Callable[[T], None]) -> 'WorkerJob[T]':
         self._compensation = f
+        return self
 
 
 class SagaWorker:
