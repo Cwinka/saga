@@ -1,18 +1,16 @@
 import pytest
 
-from saga.saga import saga_participant, SagaWorker, SagaResult
+from saga.saga import SagaWorker
 
 
 class SpecialErr(Exception):
     pass
 
 
-@saga_participant
 def run_in_worker(x: int) -> str:
     return str(x)
 
 
-@saga_participant
 def run_in_worker_with_raise() -> str:
     raise SpecialErr()
 
@@ -25,16 +23,11 @@ def worker() -> SagaWorker:
 def test_worker_run(worker):
     x = 42
 
-    result = worker.run(run_in_worker, x)
+    result = worker.job(run_in_worker, x).run()
 
-    assert isinstance(result, SagaResult)
-    assert result.value() == str(x)
+    assert result == str(x)
 
 
 def test_worker_err(worker):
-    result = worker.run(run_in_worker_with_raise)
-
-    assert isinstance(result, SagaResult)
-    assert result.is_err()
-    with pytest.raises(AssertionError):
-        result.value()
+    with pytest.raises(SpecialErr):
+        worker.job(run_in_worker_with_raise).run()
