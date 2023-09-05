@@ -8,24 +8,24 @@ class SpecialErr(Exception):
 
 
 @saga_participant
-def run_in_worker(x: int) -> str:
+def run_participant(x: int) -> str:
     return str(x)
 
 
 @saga_participant
-def run_in_worker_err() -> str:
+def run_participant_with_raise() -> str:
     raise SpecialErr()
 
 
-def test_worker_run():
+def test_participant_run():
     x = 42
-    result = run_in_worker(x)
+    result = run_participant(x)
 
     assert result.value() == str(x)
 
 
-def test_worker_err():
-    result = run_in_worker_err()
+def test_participant_run_with_raise():
+    result = run_participant_with_raise()
     assert result.is_err()
 
     with pytest.raises(AssertionError):
