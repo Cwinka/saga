@@ -2,7 +2,8 @@ import functools
 import multiprocessing.pool
 import os
 from collections.abc import Callable
-from typing import ParamSpec, Optional, Concatenate, TypeVar, Generic, Tuple, List, Dict, Any
+from types import TracebackType
+from typing import Any, Concatenate, Dict, Generic, List, Optional, ParamSpec, Tuple, Type, TypeVar
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -47,7 +48,8 @@ class SagaWorker:
     def __enter__(self) -> 'SagaWorker':
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[Exception],
+                 exc_tb: Optional[TracebackType]) -> None:
         if exc_type is not None:
             self._compensate.run()
 
@@ -96,6 +98,6 @@ class SagaJob(Generic[T]):
 def idempotent_saga(f: Callable[Concatenate[SagaWorker, P], T]) -> \
         Callable[Concatenate[SagaWorker, P], SagaJob[T]]:
     @functools.wraps(f)
-    def wrap(worker: SagaWorker, *args: P.args, **kwargs: P.kwargs) -> SagaJob[T]:
+    def wrap(worker: SagaWorker, /, *args: P.args, **kwargs: P.kwargs) -> SagaJob[T]:
         return SagaJob(f, worker, *args, **kwargs)
     return wrap
