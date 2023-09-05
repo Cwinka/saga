@@ -19,17 +19,12 @@ class WorkerJob(Generic[T]):
         self._compensation: Optional[Callable[[T], None]] = None
 
     def run(self) -> T:
-        try:
-            r = self._f(*self._args, **self._kwargs)
-            # Здесь должно быть сохранение результата f, для того, чтобы получить его в случае
-            # непредвиденного завершения работы
-            if self._compensation is not None:
-                self._compensate.add_compensate(self._compensation, r)
-            return r
-        except Exception:
-            self._compensate.run()
-            # Сохранить информацию об исключении
-            raise
+        r = self._f(*self._args, **self._kwargs)
+        # Здесь должно быть сохранение результата f, для того, чтобы получить его в случае
+        # непредвиденного завершения работы
+        if self._compensation is not None:
+            self._compensate.add_compensate(self._compensation, r)
+        return r
 
     def with_compensation(self, f: Callable[[T], None]) -> 'WorkerJob[T]':
         self._compensation = f
@@ -45,6 +40,17 @@ class SagaWorker:
     def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs,) -> WorkerJob[T]:
         return WorkerJob(self._compensate, f, *args, **kwargs)
 
+    def compensate(self) -> 'SagaWorker':
+        self._compensate = SagaCompensate()
+        return self
+
+    def __enter__(self) -> 'SagaWorker':
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        if exc_type is not None:
+            self._compensate.run()
+
 
 class SagaCompensate:
     def __init__(self) -> None:
@@ -57,7 +63,10 @@ class SagaCompensate:
         """
         Запуск всех добавленных компенсаций.
         """
-        pass
+        self._compensations.reverse()
+        while self._compensations:
+            f, args, kwargs = self._compensations.pop()
+            f(*args, **kwargs)
 
 
 class SagaJob(Generic[T]):
