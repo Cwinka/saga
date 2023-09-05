@@ -63,3 +63,24 @@ def test_worker_job_with_compensation_no_run(worker):
 
     assert compensate_check == 0, 'Компенсационная функция была запущена без контекстного ' \
                                   'менеджера.'
+
+
+def test_worker_job_with_multiple_compensations(worker):
+    compensate_check = 0
+    x = 42
+
+    def foo(_x: str) -> None:
+        nonlocal compensate_check
+        compensate_check += int(_x)
+
+    def job_with_compensation() -> None:
+        with pytest.raises(SpecialErr):
+            with worker.compensate():
+                worker.job(run_in_worker, x).with_compensation(foo).run()
+                worker.job(run_in_worker_with_raise).run()
+
+    job_with_compensation()
+    assert compensate_check == x
+
+    job_with_compensation()
+    assert compensate_check == 2*x, 'Компенсационная функция была запущена дважды.'
