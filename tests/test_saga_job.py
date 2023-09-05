@@ -15,9 +15,9 @@ def float_return(worker: SagaWorker) -> float:
     (str_return, '42'),
     (float_return, 42.0),
 ])
-def test_saga_job_run(test_function, expected_result) -> None:
+def test_saga_job_run(test_function, expected_result):
 
-    job = SagaJob(test_function, (SagaWorker('1'),))
+    job = SagaJob(test_function, SagaWorker('1'))
     job.run()
 
     result = job.wait()

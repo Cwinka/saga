@@ -2,7 +2,8 @@ import functools
 import multiprocessing.pool
 import os
 import traceback
-from typing import ParamSpec, Optional, Callable, Tuple, Concatenate, TypeVar, Generic
+from collections.abc import Callable
+from typing import ParamSpec, Optional, Concatenate, TypeVar, Generic
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -43,9 +44,9 @@ class SagaJob(Generic[T]):
 
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
 
-    def __init__(self, f: Callable[Concatenate[SagaWorker, P], T], *args: P.args,
-                 **kwargs: P.kwargs):
-        self._idempotent_key = args[0]
+    def __init__(self, f: Callable[Concatenate[SagaWorker, P], T], worker: SagaWorker,
+                 *args: P.args, **kwargs: P.kwargs):
+        self._worker = worker
         self._f = f
         self._args = args
         self._kwargs = kwargs
@@ -53,7 +54,8 @@ class SagaJob(Generic[T]):
 
     def run(self) -> None:
         if self._result is None:
-            self._result = self._pool.apply_async(self._f, self._args, self._kwargs)
+            self._result = self._pool.apply_async(self._f, args=(self._worker, *self._args),
+                                                  kwds=self._kwargs)
 
     def wait(self, timeout: Optional[float] = None) -> T:
         if self._result is None:
@@ -65,8 +67,8 @@ class SagaJob(Generic[T]):
 def idempotent_saga(f: Callable[Concatenate[SagaWorker, P], T]) -> \
         Callable[Concatenate[SagaWorker, P], SagaJob[T]]:
     @functools.wraps(f)
-    def wrap(*args: P.args, **kwargs: P.kwargs) -> SagaJob[T]:
-        return SagaJob(f, *args, **kwargs)
+    def wrap(worker: SagaWorker, *args: P.args, **kwargs: P.kwargs) -> SagaJob[T]:
+        return SagaJob(f, worker, *args, **kwargs)
     return wrap
 
 
