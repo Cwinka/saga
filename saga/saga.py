@@ -148,6 +148,26 @@ class SagaWorker:
 
 
 class SagaJob(Generic[T]):
+    """
+    A SagaJob is responsible for creating saga objects.
+    Saga is a function marked with "idempotent_saga" decorator or created via initializing SagaJob
+    on a function.
+
+    @idempotent_saga
+    def saga1(worker: SagaWorker, my_arg: int):
+        pass
+
+    def saga2(worker: SagaWorker, my_arg: int):
+        pass
+
+    job1 = saga1(SagaWorker('1'), 42)
+    job2 = SagaJob(saga2, SagaWorker('1'), 42)  # same job as above
+
+    SagaJob is used to run sagas and sometimes wait for its execution done.
+
+    job1.run()
+    job1.wait()  # "wait" method implies "run" method, so call "run" is redundant.
+    """
 
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
 
@@ -160,18 +180,30 @@ class SagaJob(Generic[T]):
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
 
     def run(self) -> None:
+        """
+        Run a main function. Non-blocking.
+        """
         if self._result is None:
             self._result = self._pool.apply_async(self._f_with_compensation,
                                                   args=(self._worker, *self._args),
                                                   kwds=self._kwargs)
 
     def wait(self, timeout: Optional[float] = None) -> T:
+        """
+        Wait for a main function is executed. Automatically implies run.
+        :param timeout: Time in seconds to wait for execution is done.
+        :return: Result of a main function.
+        """
         if self._result is None:
             self.run()
         assert self._result is not None
         return self._result.get(timeout)
 
     def _compensate_on_exception(self, f: Callable[P, T]) -> Callable[P, T]:
+        """
+        Wraps function f with try except block that runs compensation functions on any exception
+        inside f and then reraise an exception.
+        """
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
             try:
@@ -185,6 +217,9 @@ class SagaJob(Generic[T]):
 
 def idempotent_saga(f: Callable[Concatenate[SagaWorker, P], T]) -> \
         Callable[Concatenate[SagaWorker, P], SagaJob[T]]:
+    """
+    Decorator to mark a function as saga function.
+    """
     @functools.wraps(f)
     def wrap(worker: SagaWorker, /, *args: P.args, **kwargs: P.kwargs) -> SagaJob[T]:
         return SagaJob(f, worker, *args, **kwargs)
