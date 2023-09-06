@@ -5,7 +5,7 @@ import pickle
 import traceback
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Concatenate, Generic, List, Optional, ParamSpec, TypeVar
+from typing import Any, Concatenate, Generic, List, Optional, ParamSpec, TypeVar
 
 from saga.models import JobRecord, JobStatus
 
@@ -17,10 +17,14 @@ class JobSPec(Generic[P, T]):
     def __init__(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
         self.f = f
         self.args = args
+        self._args: List[Any] = []
         self.kwargs = kwargs
 
+    def insert_arg(self, a: Any) -> None:
+        self._args.insert(0, a)
+
     def call(self) -> T:
-        return self.f(*self.args, **self.kwargs)
+        return self.f(*self._args, *self.args, **self.kwargs)
 
 
 class SagaCompensate:
@@ -130,7 +134,7 @@ class WorkerJob(Generic[T]):
         """
         r = self._spec.call()
         if self._compensation_spec is not None:
-            self._compensation_spec.args = (r, *self._compensation_spec.args)
+            self._compensation_spec.insert_arg(r)
             self._compensate.add_compensate(self._compensation_spec)
         return r
 
