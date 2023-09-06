@@ -90,14 +90,20 @@ class SagaCompensate:
         self._compensations: List[Tuple[Callable[..., None], Tuple[Any, ...], Dict[str, Any]]] = []
 
     def add_compensate(self, f: Callable[P, None], *args: P.args, **kwargs: P.kwargs) -> None:
+        """
+        Add compensation function.
+        """
         self._compensations.append((f, args, kwargs))
 
     def clear(self) -> None:
+        """
+        Clear all added compensation functions.
+        """
         self._compensations.clear()
 
     def run(self) -> None:
         """
-        Запуск всех добавленных компенсаций.
+        Runs all added compensation functions.
         """
         self._compensations.reverse()
         while self._compensations:
