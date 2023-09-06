@@ -1,9 +1,9 @@
 import pickle
 
-from pydantic import BaseModel
 from enum import Enum
 from typing import Optional
 from datetime import datetime
+from dataclasses import dataclass
 
 
 class JobStatus(str, Enum):
@@ -17,7 +17,8 @@ class JobStatus(str, Enum):
     """ Method has encourage an exception during execution. """
 
 
-class JobRecord(BaseModel):
+@dataclass
+class JobRecord:
     idempotent_operation_id: str
     """ A unique key op an operation inside saga. """
     status: JobStatus = JobStatus.RUNNING
@@ -30,4 +31,3 @@ class JobRecord(BaseModel):
     """ Error message of an operation """
     failed_time: Optional[datetime] = None
     """ Error time when exception happened. """
-
