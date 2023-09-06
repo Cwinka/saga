@@ -1,11 +1,87 @@
 import functools
 import multiprocessing.pool
 import os
+import pickle
+import traceback
+from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, Concatenate, Dict, Generic, List, Optional, ParamSpec, Tuple, TypeVar
+from typing import Concatenate, Generic, List, Optional, ParamSpec, TypeVar
+
+from saga.models import JobRecord, JobStatus
 
 P = ParamSpec('P')
 T = TypeVar('T')
+
+
+class JobSPec(Generic[P, T]):
+    def __init__(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
+        self.f = f
+        self.args = args
+        self.kwargs = kwargs
+
+    def call(self) -> T:
+        return self.f(*self.args, **self.kwargs)
+
+
+class SagaCompensate:
+    """
+    A SagaCompensate is responsible to hold and run compensation functions which has been added
+    to it.
+    SagaCompensate is used if an exception happens in saga function. When an exception is raised
+    first of all compensation functions are executed (in reverse order which they were added) and
+    then exception is reraised.
+    """
+    def __init__(self) -> None:
+        self._compensations: List[JobSPec[..., None]] = []
+
+    def add_compensate(self, spec: JobSPec[P, None]) -> None:
+        """
+        Add compensation function.
+        """
+        self._compensations.append(spec)
+
+    def clear(self) -> None:
+        """
+        Clear all added compensation functions.
+        """
+        self._compensations.clear()
+
+    def run(self) -> None:
+        """
+        Runs all added compensation functions.
+        """
+        self._compensations.reverse()
+        while self._compensations:
+            self._compensations.pop().call()
+
+
+class WorkerJournal(ABC):
+    """
+    Abstract journal to keep track of all executed operations inside any saga.
+    Each saga must have a unique idempotent key associated with it. All operations
+    inside saga will be stored/updated via appropriate methods and also have a unique key.
+    """
+    @abstractmethod
+    def get_record(self, idempotent_operation_id: str) -> Optional[JobRecord]:
+        """
+        Returns a job record associated with idempotent_operation_id.
+        :param idempotent_operation_id: Unique key of a job record.
+        """
+        pass
+
+    @abstractmethod
+    def create_record(self, idempotent_operation_id: str) -> JobRecord:
+        """
+        Creates new job record with unique key idempotent_operation_id.
+        """
+        pass
+
+    @abstractmethod
+    def update_record(self, record: JobRecord) -> None:
+        """
+        Updates job record.
+        """
+        pass
 
 
 class WorkerJob(Generic[T]):
@@ -38,28 +114,24 @@ class WorkerJob(Generic[T]):
         raise
     """
 
-    def __init__(self, compensate: 'SagaCompensate',
-                 f: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
+    def __init__(self, idempotent_operation_id: str, compensate: SagaCompensate,
+                 journal: WorkerJournal, spec: JobSPec[P, T]):
+        self._idempotent_operation_id = idempotent_operation_id
         self._compensate = compensate
-        self._f = f
-        self._args = args
-        self._kwargs = kwargs
-        self._compensation: Optional[Callable[..., None]] = None
-        self._compensation_args: Tuple[Any, ...] = ()
-        self._compensation_kwargs: Dict[str, Any] = {}
+        self._journal = journal
+        spec.f = self._wrap_to_savable(spec.f)
+        self._spec = spec
+        self._compensation_spec: Optional[JobSPec[..., None]] = None
 
     def run(self) -> T:
         """
         Runs a main function with associated arguments and keyword arguments.
         :return: Result of a funtion.
         """
-        r = self._f(*self._args, **self._kwargs)
-        # Здесь должно быть сохранение результата f, для того, чтобы получить его в случае
-        # непредвиденного завершения работы
-        if self._compensation is not None:
-            self._compensate.add_compensate(self._compensation,
-                                            *(r, *self._compensation_args),
-                                            **self._compensation_kwargs)
+        r = self._spec.call()
+        if self._compensation_spec is not None:
+            self._compensation_spec.args = (r, *self._compensation_spec.args)
+            self._compensate.add_compensate(self._compensation_spec)
         return r
 
     def with_compensation(self, f: Callable[Concatenate[T, P], None], *args: P.args,
@@ -72,43 +144,55 @@ class WorkerJob(Generic[T]):
         :param kwargs: Any keyword arguments to pass in f function.
         :return: The same WorkerJob object.
         """
-        self._compensation = f
-        self._compensation_args = args
-        self._compensation_kwargs = kwargs
+        self._compensation_spec = JobSPec(
+            f=self._wrap_compensation_to_savable(f),
+            *args, **kwargs
+        )
         return self
 
+    def _wrap_to_savable(self, f: Callable[P, T]) -> Callable[P, T]:
+        @functools.wraps(f)
+        def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
+            record = self._journal.get_record(self._idempotent_operation_id)
+            if record is None:
+                record = self._journal.create_record(self._idempotent_operation_id)
+            if record.status in {JobStatus.RUNNING, JobStatus.FAILED}:
+                try:
+                    r = f(*args, **kwargs)
+                except Exception as e:
+                    record.status = JobStatus.FAILED
+                    record.traceback = traceback.format_exc()
+                    record.error = str(e)
+                    self._journal.update_record(record)
+                    raise
+                record.payload = pickle.dumps(r)
+                record.status = JobStatus.DONE
+                self._journal.update_record(record)
+            else:
+                r = pickle.loads(record.payload)
+            return r
+        return wrap
 
-class SagaCompensate:
-    """
-    A SagaCompensate is responsible to hold and run compensation functions which has been added
-    to it.
-    SagaCompensate is used if an exception happens in saga function. When an exception is raised
-    first of all compensation functions are executed (in reverse order which they were added) and
-    then exception is reraised.
-    """
-    def __init__(self) -> None:
-        self._compensations: List[Tuple[Callable[..., None], Tuple[Any, ...], Dict[str, Any]]] = []
-
-    def add_compensate(self, f: Callable[P, None], *args: P.args, **kwargs: P.kwargs) -> None:
-        """
-        Add compensation function.
-        """
-        self._compensations.append((f, args, kwargs))
-
-    def clear(self) -> None:
-        """
-        Clear all added compensation functions.
-        """
-        self._compensations.clear()
-
-    def run(self) -> None:
-        """
-        Runs all added compensation functions.
-        """
-        self._compensations.reverse()
-        while self._compensations:
-            f, args, kwargs = self._compensations.pop()
-            f(*args, **kwargs)
+    def _wrap_compensation_to_savable(self, f: Callable[P, None]) -> Callable[P, None]:
+        @functools.wraps(f)
+        def wrap(*args: P.args, **kwargs: P.kwargs) -> None:
+            op_id = f'cpm_{self._idempotent_operation_id}'
+            record = self._journal.get_record(op_id)
+            if record is None:
+                record = self._journal.create_record(op_id)
+            if record.status in {JobStatus.RUNNING, JobStatus.FAILED}:
+                try:
+                    f(*args, **kwargs)
+                except Exception as e:
+                    # компенсация не может выполниться
+                    record.status = JobStatus.FAILED
+                    record.traceback = traceback.format_exc()
+                    record.error = str(e)
+                    self._journal.update_record(record)
+                    raise
+                record.status = JobStatus.COMPENSATED
+                self._journal.update_record(record)
+        return wrap
 
 
 class SagaWorker:
@@ -116,7 +200,7 @@ class SagaWorker:
     A SagaWorker is responsible for creating jobs (WorkerJob) inside saga function.
     The main reason there is WorkerJob and SagaWorker is that a main function inside WorkerJob can
     be associated with a compensation function and the first argument of compensation function is a
-    result of main function. So WorkerJob is typed object to properly pass link a compensation to
+    result of a main function. So WorkerJob is typed object to properly link a compensation to
     a main function.
 
     NOTE: when SagaWorker is used outside any saga no compensations will be executed on exception.
@@ -132,9 +216,12 @@ class SagaWorker:
         raise
     """
 
-    def __init__(self, idempotent_key: str, compensate: Optional[SagaCompensate] = None):
-        self.idempotent_key = idempotent_key
+    def __init__(self, idempotent_key: str, journal: WorkerJournal,
+                 compensate: Optional[SagaCompensate] = None):
+        self._idempotent_key = idempotent_key
+        self._journal = journal
         self._compensate = compensate or SagaCompensate()
+        self._operation_id = 0
 
     @property
     def compensator(self) -> SagaCompensate:
@@ -150,7 +237,10 @@ class SagaWorker:
         :param args: Any arguments to pass in f function.
         :param kwargs: Any keyword arguments to pass in f function.
         """
-        return WorkerJob(self._compensate, f, *args, **kwargs)
+        job = WorkerJob(f'{self._idempotent_key}_{self._operation_id}', self._compensate,
+                        self._journal, JobSPec(f, *args, **kwargs))
+        self._operation_id += 1
+        return job
 
 
 class SagaJob(Generic[T]):
