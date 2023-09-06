@@ -2,8 +2,7 @@ import functools
 import multiprocessing.pool
 import os
 from collections.abc import Callable
-from types import TracebackType
-from typing import Any, Concatenate, Dict, Generic, List, Optional, ParamSpec, Tuple, Type, TypeVar
+from typing import Any, Concatenate, Dict, Generic, List, Optional, ParamSpec, Tuple, TypeVar
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -26,6 +25,17 @@ class WorkerJob(Generic[T]):
     def any_saga(worker: SagaWorker, *args, **kwargs):
         result = worker.job(any_function, *args, **kwargs)\
             .with_compensation(rollback_any_function).run()
+
+    NOTE: when WorkerJob is used outside any saga no compensations will be executed on exception.
+    Use compensate object directly to call compensation functions.
+
+    compensate = SagaCompensate()
+    try:
+        WorkerJob(compensate, any_function).with_compensation(rollback_any_function).run()
+        raise StrangeException
+    except StrangeException:
+        compensate.run()
+        raise
     """
 
     def __init__(self, compensate: 'SagaCompensate',
@@ -69,6 +79,13 @@ class WorkerJob(Generic[T]):
 
 
 class SagaCompensate:
+    """
+    A SagaCompensate is responsible to hold and run compensation functions which has been added
+    to it.
+    SagaCompensate is used if an exception happens in saga function. When an exception is raised
+    first of all compensation functions are executed (in reverse order which they were added) and
+    then exception is reraised.
+    """
     def __init__(self) -> None:
         self._compensations: List[Tuple[Callable[..., None], Tuple[Any, ...], Dict[str, Any]]] = []
 
@@ -95,6 +112,18 @@ class SagaWorker:
     be associated with a compensation function and the first argument of compensation function is a
     result of main function. So WorkerJob is typed object to properly pass link a compensation to
     a main function.
+
+    NOTE: when SagaWorker is used outside any saga no compensations will be executed on exception.
+    Use compensate object directly to call compensation functions.
+
+    compensate = SagaCompensate()
+    worker = SagaWorker('1', compensate)
+    try:
+        worker.job(any_function).with_compensation(rollback_any_function).run()
+        raise StrangeException
+    except StrangeException:
+        compensate.run()
+        raise
     """
 
     def __init__(self, idempotent_key: str, compensate: Optional[SagaCompensate] = None):
