@@ -89,6 +89,13 @@ class SagaCompensate:
 
 
 class SagaWorker:
+    """
+    A SagaWorker is responsible for creating jobs (WorkerJob) inside saga function.
+    The main reason there is WorkerJob and SagaWorker is that a main function inside WorkerJob can
+    be associated with a compensation function and the first argument of compensation function is a
+    result of main function. So WorkerJob is typed object to properly pass link a compensation to
+    a main function.
+    """
 
     def __init__(self, idempotent_key: str, compensate: Optional[SagaCompensate] = None):
         self.idempotent_key = idempotent_key
@@ -96,9 +103,18 @@ class SagaWorker:
 
     @property
     def compensator(self) -> SagaCompensate:
+        """
+        A compensator that is used with worker object.
+        """
         return self._compensate
 
     def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> WorkerJob[T]:
+        """
+        Create a WorkerJob with main function f.
+        :param f: Main function.
+        :param args: Any arguments to pass in f function.
+        :param kwargs: Any keyword arguments to pass in f function.
+        """
         return WorkerJob(self._compensate, f, *args, **kwargs)
 
 
