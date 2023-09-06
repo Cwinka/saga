@@ -145,7 +145,7 @@ class WorkerJob(Generic[T]):
         :return: The same WorkerJob object.
         """
         self._compensation_spec = JobSPec(
-            f=self._wrap_compensation_to_savable(f),
+            self._wrap_compensation_to_savable(f),
             *args, **kwargs
         )
         return self
