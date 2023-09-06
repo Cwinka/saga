@@ -44,7 +44,7 @@ class WorkerJob(Generic[T]):
         self._f = f
         self._args = args
         self._kwargs = kwargs
-        self._compensation: Optional[Callable[Concatenate[T, P], None]] = None
+        self._compensation: Optional[Callable[..., None]] = None
         self._compensation_args: Tuple[Any, ...] = ()
         self._compensation_kwargs: Dict[str, Any] = {}
 
