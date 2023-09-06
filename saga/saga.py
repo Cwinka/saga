@@ -68,29 +68,6 @@ class WorkerJob(Generic[T]):
         return self
 
 
-class SagaWorker:
-
-    def __init__(self, idempotent_key: str):
-        self.idempotent_key = idempotent_key
-        self._compensate = SagaCompensate()
-
-    def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> WorkerJob[T]:
-        return WorkerJob(self._compensate, f, *args, **kwargs)
-
-    def compensate(self) -> 'SagaWorker':
-        # метод используется только для явного указания того, чтоб будет выполняться компенсация
-        return self
-
-    def __enter__(self) -> 'SagaWorker':
-        return self
-
-    def __exit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[Exception],
-                 exc_tb: Optional[TracebackType]) -> None:
-        if exc_type is not None:
-            self._compensate.run()
-        self._compensate.clear()
-
-
 class SagaCompensate:
     def __init__(self) -> None:
         self._compensations: List[Tuple[Callable[..., None], Tuple[Any, ...], Dict[str, Any]]] = []
@@ -111,6 +88,20 @@ class SagaCompensate:
             f(*args, **kwargs)
 
 
+class SagaWorker:
+
+    def __init__(self, idempotent_key: str, compensate: Optional[SagaCompensate] = None):
+        self.idempotent_key = idempotent_key
+        self._compensate = compensate or SagaCompensate()
+
+    @property
+    def compensator(self) -> SagaCompensate:
+        return self._compensate
+
+    def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> WorkerJob[T]:
+        return WorkerJob(self._compensate, f, *args, **kwargs)
+
+
 class SagaJob(Generic[T]):
 
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
@@ -118,14 +109,15 @@ class SagaJob(Generic[T]):
     def __init__(self, f: Callable[Concatenate[SagaWorker, P], T], worker: SagaWorker,
                  *args: P.args, **kwargs: P.kwargs):
         self._worker = worker
-        self._f = f
+        self._f_with_compensation = self._compensate_on_exception(f)
         self._args = args
         self._kwargs = kwargs
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
 
     def run(self) -> None:
         if self._result is None:
-            self._result = self._pool.apply_async(self._f, args=(self._worker, *self._args),
+            self._result = self._pool.apply_async(self._f_with_compensation,
+                                                  args=(self._worker, *self._args),
                                                   kwds=self._kwargs)
 
     def wait(self, timeout: Optional[float] = None) -> T:
@@ -133,6 +125,17 @@ class SagaJob(Generic[T]):
             self.run()
         assert self._result is not None
         return self._result.get(timeout)
+
+    def _compensate_on_exception(self, f: Callable[P, T]) -> Callable[P, T]:
+        @functools.wraps(f)
+        def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
+            try:
+                return f(*args, **kwargs)
+            except Exception:
+                self._worker.compensator.run()
+                self._worker.compensator.clear()
+                raise
+        return wrap
 
 
 def idempotent_saga(f: Callable[Concatenate[SagaWorker, P], T]) -> \
