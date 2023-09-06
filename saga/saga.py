@@ -10,6 +10,23 @@ T = TypeVar('T')
 
 
 class WorkerJob(Generic[T]):
+    """
+    A WorkerJob is responsible for running functions inside any saga function.
+    The main goal of this object is to make control points where execution can continue if
+    unexpected shutdown happened.
+
+    @idempotent_saga
+    def any_saga(worker: SagaWorker, *args, **kwargs):
+        result = worker.job(any_function, *args, **kwargs).run()
+
+    After creating object with function f there's a feature called "compensation". This feature
+    adds associated method with function f which will be called if any exception happens after it:
+
+    @idempotent_saga
+    def any_saga(worker: SagaWorker, *args, **kwargs):
+        result = worker.job(any_function, *args, **kwargs)\
+            .with_compensation(rollback_any_function).run()
+    """
 
     def __init__(self, compensate: 'SagaCompensate',
                  f: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
@@ -22,6 +39,10 @@ class WorkerJob(Generic[T]):
         self._compensation_kwargs: Dict[str, Any] = {}
 
     def run(self) -> T:
+        """
+        Runs a main function with associated arguments and keyword arguments.
+        :return: Result of a funtion.
+        """
         r = self._f(*self._args, **self._kwargs)
         # Здесь должно быть сохранение результата f, для того, чтобы получить его в случае
         # непредвиденного завершения работы
@@ -33,6 +54,14 @@ class WorkerJob(Generic[T]):
 
     def with_compensation(self, f: Callable[Concatenate[T, P], None], *args: P.args,
                           **kwargs: P.kwargs) -> 'WorkerJob[T]':
+        """
+        Adds a compensation function which will be called if any exception happens after running a
+        main function.
+        :param f: Compensation function. The first argument is always a result of a main function.
+        :param args: Any arguments to pass in f function.
+        :param kwargs: Any keyword arguments to pass in f function.
+        :return: The same WorkerJob object.
+        """
         self._compensation = f
         self._compensation_args = args
         self._compensation_kwargs = kwargs
