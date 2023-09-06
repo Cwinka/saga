@@ -1,6 +1,6 @@
 import pytest
 
-from saga.saga import SagaJob, SagaWorker
+from saga.saga import idempotent_saga, SagaJob, SagaWorker
 
 
 def str_return(worker: SagaWorker) -> str:
@@ -9,6 +9,23 @@ def str_return(worker: SagaWorker) -> str:
 
 def float_return(worker: SagaWorker) -> float:
     return 42.0
+
+
+def test_saga_job(wk_journal):
+    def foo(worker: SagaWorker) -> int:
+        return 1
+
+    job = SagaJob(foo, SagaWorker('1', wk_journal))
+    assert isinstance(job, SagaJob)
+
+
+def test_decorator_return(wk_journal):
+    @idempotent_saga
+    def foo(worker: SagaWorker) -> int:
+        return 1
+
+    job = foo(SagaWorker('1', wk_journal))
+    assert isinstance(job, SagaJob)
 
 
 @pytest.mark.parametrize('test_function, expected_result', [
