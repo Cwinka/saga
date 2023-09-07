@@ -57,3 +57,32 @@ def test_saga_job_idempotent(wk_journal):
     result2 = SagaJob(sum_return, SagaWorker('1', wk_journal), 10).wait()
 
     assert result1 == result2, 'Запуск саг с одинаковыми ключами должен давать один результат.'
+
+
+def test_saga_job_compensation(wk_journal):
+
+    x = 42
+    compensation_check = 0
+
+    class SomeError(Exception):
+        pass
+
+    def compensate(_x: int) -> None:
+        nonlocal compensation_check
+        compensation_check += _x
+
+    def function(worker: SagaWorker) -> None:
+        for i in range(1, x+1):
+            if i == x:
+                raise SomeError
+            worker.job(lambda: i).with_compensation(compensate).run()
+
+    job = SagaJob(function, SagaWorker('1', wk_journal))
+
+    try:
+        job.wait()
+    except SomeError:
+        pass
+
+    assert compensation_check == (x**2/2 + x/2) - x, 'Все компенсационные функции должны быть ' \
+                                                     'выполнены при исключении.'
