@@ -180,21 +180,16 @@ class WorkerJob(Generic[T]):
 class SagaWorker:
     """
     A SagaWorker is responsible for creating jobs (WorkerJob) inside saga function.
-    The main reason there is WorkerJob and SagaWorker is that a main function inside WorkerJob can
-    be associated with a compensation function and the first argument of compensation function is a
-    result of a main function. So WorkerJob is typed object to properly link a compensation to
-    a main function.
+    SagaWorker creates execution control points on every job created and run and also collects
+    all compensations that has been linked to jobs to run all of them on exception.
 
-    NOTE: when SagaWorker is used outside any saga no compensations will be executed on exception.
-    Use compensate object directly to call compensation functions.
-
-    compensate = SagaCompensate()
-    worker = SagaWorker('1', compensate)
+    journal = WorkerJournal()  # a journal where control points are stored
+    worker = SagaWorker('1')
     try:
         worker.job(any_function).with_compensation(rollback_any_function).run()
         raise StrangeException
     except StrangeException:
-        compensate.run()
+        worker.compensator.run()
         raise
     """
 
