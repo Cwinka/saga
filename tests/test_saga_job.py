@@ -17,7 +17,7 @@ def test_saga_job(wk_journal):
     def foo(worker: SagaWorker) -> int:
         return 1
 
-    job = SagaJob(foo, SagaWorker('1', wk_journal))
+    job = SagaJob(SagaWorker('1', wk_journal), foo)
     assert isinstance(job, SagaJob)
 
 
@@ -36,7 +36,7 @@ def test_decorator_return(wk_journal):
 ])
 def test_saga_job_run(test_function, expected_result, wk_journal):
 
-    job = SagaJob(test_function, SagaWorker('1', wk_journal))
+    job = SagaJob(SagaWorker('1', wk_journal), test_function)
     job.run()
 
     result = job.wait()
@@ -53,8 +53,8 @@ def sum_return(worker: SagaWorker, x: int) -> int:
 
 def test_saga_job_idempotent(wk_journal):
 
-    result1 = SagaJob(sum_return, SagaWorker('1', wk_journal), 10).wait()
-    result2 = SagaJob(sum_return, SagaWorker('1', wk_journal), 10).wait()
+    result1 = SagaJob(SagaWorker('1', wk_journal), sum_return, 10).wait()
+    result2 = SagaJob(SagaWorker('1', wk_journal), sum_return, 10).wait()
 
     assert result1 == result2, 'Запуск саг с одинаковыми ключами должен давать один результат.'
 
@@ -77,7 +77,7 @@ def test_saga_job_compensation(wk_journal):
                 raise SomeError
             worker.job(lambda: i).with_compensation(compensate).run()
 
-    job = SagaJob(function, SagaWorker('1', wk_journal))
+    job = SagaJob(SagaWorker('1', wk_journal), function)
 
     try:
         job.wait()

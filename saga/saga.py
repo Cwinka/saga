@@ -299,7 +299,7 @@ class SagaJob(Generic[T]):
 
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
 
-    def __init__(self, f: Callable[Concatenate[SagaWorker, P], T], worker: SagaWorker,
+    def __init__(self, worker: SagaWorker, f: Callable[Concatenate[SagaWorker, P], T],
                  *args: P.args, **kwargs: P.kwargs):
         self._worker = worker
         self._f_with_compensation = self._compensate_on_exception(f)
