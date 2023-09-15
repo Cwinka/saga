@@ -43,11 +43,11 @@ class JobSPec(Generic[P, T]):
         return self.f(*self._args, *self.args, **self.kwargs)
 
 
-class SagaCompensate:
+class SagaCompensator:
     """
-    A SagaCompensate is responsible to hold and run compensation functions which has been added
+    A SagaCompensator is responsible to hold and run compensation functions which has been added
     to it.
-    SagaCompensate is used if an exception happens in saga function. When an exception is raised
+    SagaCompensator is used if an exception happens in saga function. When an exception is raised
     first of all compensation functions are executed (in reverse order which they were added) and
     then exception is reraised.
     """
@@ -167,14 +167,14 @@ class SagaWorker:
     default_journal = MemoryJournal()  # one journal for all workers
 
     def __init__(self, idempotent_key: str, journal: WorkerJournal = default_journal,
-                 compensate: Optional[SagaCompensate] = None):
+                 compensator: Optional[SagaCompensator] = None):
         self._idempotent_key = idempotent_key
         self._journal = journal
-        self._compensate = compensate or SagaCompensate()
+        self._compensate = compensator or SagaCompensator()
         self._operation_id = 0
 
     @property
-    def compensator(self) -> SagaCompensate:
+    def compensator(self) -> SagaCompensator:
         """
         A compensator that is used with worker object.
         """
