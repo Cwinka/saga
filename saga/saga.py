@@ -4,11 +4,11 @@ import multiprocessing.pool
 import os
 import pickle
 import traceback
-from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any, Concatenate, Generic, List, Optional, ParamSpec, TypeVar
 
-from saga.models import JobRecord, JobStatus
+from saga.journal import MemoryJournal, WorkerJournal
+from saga.models import JobStatus
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -73,35 +73,6 @@ class SagaCompensate:
         self._compensations.reverse()
         while self._compensations:
             self._compensations.pop().call()
-
-
-class WorkerJournal(ABC):
-    """
-    Abstract journal to keep track of all executed operations inside any saga.
-    Each saga must have a unique idempotent key associated with it. All operations
-    inside saga will be stored/updated via appropriate methods and also have a unique key.
-    """
-    @abstractmethod
-    def get_record(self, idempotent_operation_id: str) -> Optional[JobRecord]:
-        """
-        Returns a job record associated with idempotent_operation_id.
-        :param idempotent_operation_id: Unique key of a job record.
-        """
-        pass
-
-    @abstractmethod
-    def create_record(self, idempotent_operation_id: str) -> JobRecord:
-        """
-        Creates new job record with unique key idempotent_operation_id.
-        """
-        pass
-
-    @abstractmethod
-    def update_record(self, record: JobRecord) -> None:
-        """
-        Updates job record.
-        """
-        pass
 
 
 class WorkerJob(Generic[T]):
@@ -193,7 +164,9 @@ class SagaWorker:
         raise
     """
 
-    def __init__(self, idempotent_key: str, journal: WorkerJournal,
+    default_journal = MemoryJournal()  # one journal for all workers
+
+    def __init__(self, idempotent_key: str, journal: WorkerJournal = default_journal,
                  compensate: Optional[SagaCompensate] = None):
         self._idempotent_key = idempotent_key
         self._journal = journal
