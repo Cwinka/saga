@@ -13,20 +13,20 @@ def float_return(worker: SagaWorker) -> float:
     return 42.0
 
 
-def test_saga_job(wk_journal):
-    def foo(worker: SagaWorker) -> int:
+def test_saga_job(worker):
+    def foo(_worker: SagaWorker) -> int:
         return 1
 
-    job = SagaJob(SagaWorker('1', wk_journal), foo)
+    job = SagaJob(worker, foo)
     assert isinstance(job, SagaJob)
 
 
-def test_decorator_return(wk_journal):
+def test_decorator_return(worker):
     @idempotent_saga
-    def foo(worker: SagaWorker) -> int:
+    def foo(_worker: SagaWorker) -> int:
         return 1
 
-    job = foo(SagaWorker('1', wk_journal))
+    job = foo(worker)
     assert isinstance(job, SagaJob)
 
 
@@ -34,9 +34,9 @@ def test_decorator_return(wk_journal):
     (str_return, '42'),
     (float_return, 42.0),
 ])
-def test_saga_job_run(test_function, expected_result, wk_journal):
+def test_saga_job_run(worker, test_function, expected_result):
 
-    job = SagaJob(SagaWorker('1', wk_journal), test_function)
+    job = SagaJob(worker, test_function)
     job.run()
 
     result = job.wait()
@@ -51,15 +51,14 @@ def sum_return(worker: SagaWorker, x: int) -> int:
     return s
 
 
-def test_saga_job_idempotent(wk_journal):
-
-    result1 = SagaJob(SagaWorker('1', wk_journal), sum_return, 10).wait()
-    result2 = SagaJob(SagaWorker('1', wk_journal), sum_return, 10).wait()
+def test_saga_job_idempotent():
+    result1 = SagaJob(SagaWorker('1'), sum_return, 10).wait()
+    result2 = SagaJob(SagaWorker('1'), sum_return, 10).wait()
 
     assert result1 == result2, 'Запуск саг с одинаковыми ключами должен давать один результат.'
 
 
-def test_saga_job_compensation(wk_journal):
+def test_saga_job_compensation(worker):
 
     x = 42
     compensation_check = 0
@@ -71,13 +70,13 @@ def test_saga_job_compensation(wk_journal):
         nonlocal compensation_check
         compensation_check += _x
 
-    def function(worker: SagaWorker) -> None:
+    def function(_worker: SagaWorker) -> None:
         for i in range(1, x+1):
             if i == x:
                 raise SomeError
-            worker.job(lambda: i).with_compensation(compensate).run()
+            _worker.job(lambda: i).with_compensation(compensate).run()
 
-    job = SagaJob(SagaWorker('1', wk_journal), function)
+    job = SagaJob(worker, function)
 
     try:
         job.wait()

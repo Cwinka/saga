@@ -1,44 +1,49 @@
 import pytest
 
-from saga.saga import SagaWorker, WorkerJob
+from saga.saga import SagaWorker, WorkerJob, SagaCompensator
+from saga.journal import MemoryJournal
 
 
 def run_in_worker(x: int) -> str:
     return str(x)
 
 
-def test_worker_job_create(wk_journal):
-    job = SagaWorker('1', wk_journal).job(run_in_worker, 1)
+def test_worker_job_create(worker):
+    job = worker.job(run_in_worker, 1)
     assert isinstance(job, WorkerJob)
 
 
-def test_worker_compensator(wk_journal, compensator):
-    worker = SagaWorker('1', wk_journal, compensator)
-    assert compensator is worker.compensator
+def test_worker_compensator():
+    comp = SagaCompensator()
+    worker = SagaWorker('1', compensator=comp)
+    assert comp is worker.compensator
 
 
-def test_worker_run(wk_journal):
+def test_worker_journal():
+    journal = MemoryJournal()
+    worker = SagaWorker('1', journal)
+    worker.job(lambda: 1).run()
+    assert journal.get_record('1_1') is not None
+
+
+def test_worker_run(worker):
     x = 42
-    worker = SagaWorker('1', wk_journal)
     result = worker.job(run_in_worker, x).run()
     assert result == str(x)
 
 
-def test_worker_run_exception(wk_journal):
-    x = 42
-
+def test_worker_run_exception(worker):
     class SomeError(Exception):
         pass
 
     def foo() -> None:
         raise SomeError
 
-    worker = SagaWorker('1', wk_journal)
     with pytest.raises(SomeError):
         worker.job(foo).run()
 
 
-def test_worker_run_compensate(wk_journal):
+def test_worker_run_compensate(worker):
     x = 42
     compensate_check = 0
 
@@ -46,22 +51,20 @@ def test_worker_run_compensate(wk_journal):
         nonlocal compensate_check
         compensate_check = int(_x)
 
-    worker = SagaWorker('1', wk_journal)
     worker.job(run_in_worker, x).with_compensation(foo).run()
     worker.compensator.run()
     assert compensate_check == x
 
 
-def test_worker_loop(wk_journal):
+def test_worker_loop(worker):
     x = 10
     results = []
-    worker = SagaWorker('1', wk_journal)
     for i in range(x):
         results.append(worker.job(run_in_worker, i).run())
     assert results == [str(i) for i in range(x)]
 
 
-def test_worker_loop_compensate(wk_journal):
+def test_worker_loop_compensate(worker):
     x = 42
     compensate_check = 0
 
@@ -69,7 +72,6 @@ def test_worker_loop_compensate(wk_journal):
         nonlocal compensate_check
         compensate_check += int(_x)
 
-    worker = SagaWorker('1', wk_journal)
     for i in range(1, x+1):
         worker.job(run_in_worker, i).with_compensation(foo).run()
     worker.compensator.run()

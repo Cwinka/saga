@@ -15,7 +15,7 @@ def run_in_job_with_raise() -> str:
     raise SpecialErr()
 
 
-def test_worker_job_run(compensator, wk_journal):
+def test_worker_job_run():
     x = 42
 
     job = WorkerJob(JobSPec(run_in_job, x))
@@ -23,7 +23,7 @@ def test_worker_job_run(compensator, wk_journal):
     assert result == str(x)
 
 
-def test_worker_job_err(compensator, wk_journal):
+def test_worker_job_err():
     with pytest.raises(SpecialErr):
         WorkerJob(JobSPec(run_in_job_with_raise)).run()
 
@@ -42,7 +42,7 @@ def test_worker_job_with_compensation():
     assert compensate_check == x, 'Компенсационная функция не была запущена.'
 
 
-def test_worker_job_with_multiple_compensations(compensator, wk_journal):
+def test_worker_job_with_multiple_compensations():
     compensate_check = 0
     x = 42
 
