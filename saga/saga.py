@@ -349,6 +349,6 @@ def idempotent_saga(f: Callable[Concatenate[SagaWorker, P], T]) -> \
     Decorator to mark a function as saga function.
     """
     @functools.wraps(f)
-    def wrap(worker: SagaWorker, /, *args: P.args, **kwargs: P.kwargs) -> SagaJob[T]:
-        return SagaJob(f, worker, *args, **kwargs)
-    return wrap
+    def wrap(worker: SagaWorker, *args: P.args, **kwargs: P.kwargs) -> SagaJob[T]:
+        return SagaJob(worker, f, *args, **kwargs)
+    return wrap  # type: ignore[return-value]
