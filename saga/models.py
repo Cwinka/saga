@@ -11,8 +11,6 @@ T = TypeVar('T')
 class JobStatus(str, Enum):
     RUNNING = 'RUNNING'
     """ Method running inside saga. """
-    COMPENSATED = 'COMPENSATED'
-    """ Compensation method has been executed inside saga. """
     DONE = 'DONE'
     """ Method has been executed inside saga. """
     FAILED = 'FAILED'

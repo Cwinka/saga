@@ -86,6 +86,42 @@ class WorkerJob(Generic[T]):
             self._compensation_spec.call()
 
 
+class Memoized:
+    def __init__(self, memo_prefix: str, journal: WorkerJournal):
+        self._journal = journal
+        self._memo_prefix = memo_prefix
+        self._operation_id = 0
+
+    def _next_op_id(self) -> str:
+        self._operation_id += 1
+        return f'{self._memo_prefix}_{self._operation_id}'
+
+    def memoize(self, f: Callable[P, T]) -> Callable[P, T]:
+        op_id = self._next_op_id()
+
+        @functools.wraps(f)
+        def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
+            record = self._journal.get_record(op_id)
+            if record is None:
+                record = self._journal.create_record(op_id)
+            if record.status == JobStatus.DONE:
+                return pickle.loads(record.payload)  # type: ignore[no-any-return]
+            try:
+                r = f(*args, **kwargs)
+            except Exception as e:
+                record.status = JobStatus.FAILED
+                record.traceback = traceback.format_exc()
+                record.failed_time = record.failed_time or datetime.datetime.now()
+                record.error = str(e)
+                self._journal.update_record(record)
+                raise
+            record.payload = pickle.dumps(r)
+            record.status = JobStatus.DONE
+            self._journal.update_record(record)
+            return r
+        return wrap
+
+
 class SagaWorker:
     """
     A SagaWorker is responsible for creating jobs (WorkerJob) inside saga function.
@@ -105,11 +141,10 @@ class SagaWorker:
     default_journal = MemoryJournal()  # one journal for all workers
 
     def __init__(self, idempotent_key: str, journal: WorkerJournal = default_journal,
-                 compensator: Optional[SagaCompensator] = None):
-        self._idempotent_key = idempotent_key
-        self._journal = journal
+                 compensator: Optional[SagaCompensator] = None,
+                 _memo: Optional[Memoized] = None):
+        self._memo = _memo or Memoized(idempotent_key, journal)
         self._compensate = compensator or SagaCompensator()
-        self._operation_id = 0
 
     @property
     def compensator(self) -> SagaCompensator:
@@ -125,62 +160,10 @@ class SagaWorker:
         :param args: Any arguments to pass in f function.
         :param kwargs: Any keyword arguments to pass in f function.
         """
-        job = WorkerJob(JobSpec(self._wrap_to_savable(f), *args, **kwargs),
+        job = WorkerJob(JobSpec(self._memo.memoize(f), *args, **kwargs),
                         comp_set_callback=self._place_compensation)
         return job
 
-    def _next_op_id(self) -> str:
-        self._operation_id += 1
-        return f'{self._idempotent_key}_{self._operation_id}'
-
     def _place_compensation(self, spec: JobSpec[..., None]) -> None:
-        spec.f = self._wrap_compensation_to_savable(spec.f)
+        spec.f = self._memo.memoize(spec.f)
         self._compensate.add_compensate(spec)
-
-    def _wrap_to_savable(self, f: Callable[P, T]) -> Callable[P, T]:
-        op_id = self._next_op_id()
-
-        @functools.wraps(f)
-        def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
-            record = self._journal.get_record(op_id)
-            if record is None:
-                record = self._journal.create_record(op_id)
-            if record.status in {JobStatus.RUNNING, JobStatus.FAILED}:
-                try:
-                    r = f(*args, **kwargs)
-                except Exception as e:
-                    record.status = JobStatus.FAILED
-                    record.traceback = traceback.format_exc()
-                    record.failed_time = record.failed_time or datetime.datetime.now()
-                    record.error = str(e)
-                    self._journal.update_record(record)
-                    raise
-                record.payload = pickle.dumps(r)
-                record.status = JobStatus.DONE
-                self._journal.update_record(record)
-            else:
-                r = pickle.loads(record.payload)
-            return r
-        return wrap
-
-    def _wrap_compensation_to_savable(self, f: Callable[P, None]) -> Callable[P, None]:
-        op_id = self._next_op_id()
-
-        @functools.wraps(f)
-        def wrap(*args: P.args, **kwargs: P.kwargs) -> None:
-            record = self._journal.get_record(op_id)
-            if record is None:
-                record = self._journal.create_record(op_id)
-            if record.status in {JobStatus.RUNNING, JobStatus.FAILED}:
-                try:
-                    f(*args, **kwargs)
-                except Exception as e:
-                    # компенсация не может выполниться
-                    record.status = JobStatus.FAILED
-                    record.traceback = traceback.format_exc()
-                    record.error = str(e)
-                    self._journal.update_record(record)
-                    raise
-                record.status = JobStatus.COMPENSATED
-                self._journal.update_record(record)
-        return wrap
