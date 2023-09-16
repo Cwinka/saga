@@ -2,7 +2,8 @@ import random
 
 import pytest
 
-from saga.saga import idempotent_saga, SagaJob, SagaWorker
+from saga.saga import idempotent_saga, SagaJob
+from saga.worker import SagaWorker
 
 
 def str_return(worker: SagaWorker) -> str:

@@ -1,6 +1,7 @@
 import pytest
 
-from saga.saga import WorkerJob, JobSPec
+from saga.worker import WorkerJob
+from saga.models import JobSpec
 
 
 class SpecialErr(Exception):
@@ -18,14 +19,14 @@ def run_in_job_with_raise() -> str:
 def test_worker_job_run():
     x = 42
 
-    job = WorkerJob(JobSPec(run_in_job, x))
+    job = WorkerJob(JobSpec(run_in_job, x))
     result = job.run()
     assert result == str(x)
 
 
 def test_worker_job_err():
     with pytest.raises(SpecialErr):
-        WorkerJob(JobSPec(run_in_job_with_raise)).run()
+        WorkerJob(JobSpec(run_in_job_with_raise)).run()
 
 
 def test_worker_job_with_compensation():
@@ -36,7 +37,7 @@ def test_worker_job_with_compensation():
         nonlocal compensate_check
         compensate_check = int(_x)
 
-    job1 = WorkerJob(JobSPec(run_in_job, x))
+    job1 = WorkerJob(JobSpec(run_in_job, x))
     job1.with_compensation(foo).run()
     job1.compensate()
     assert compensate_check == x, 'Компенсационная функция не была запущена.'
@@ -51,7 +52,7 @@ def test_worker_job_with_multiple_compensations():
         compensate_check += int(_x)
 
     def job_with_compensation() -> None:
-        job1 = WorkerJob(JobSPec(run_in_job, x))
+        job1 = WorkerJob(JobSpec(run_in_job, x))
         job1.with_compensation(foo).run()
         job1.compensate()
 

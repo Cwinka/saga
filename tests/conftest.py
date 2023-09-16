@@ -1,6 +1,7 @@
 import pytest
 
-from saga.saga import SagaCompensator, SagaWorker
+from saga.compensator import SagaCompensator
+from saga.worker import SagaWorker
 from saga.journal import MemoryJournal
 
 

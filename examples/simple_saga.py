@@ -2,8 +2,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from saga.journal import MemoryJournal
-from saga.saga import SagaWorker, idempotent_saga
+from saga import SagaWorker, MemoryJournal, idempotent_saga
 
 
 @idempotent_saga
