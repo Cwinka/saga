@@ -125,6 +125,9 @@ class SagaWorker:
         """
         return self._compensate
 
+    def compensate(self) -> None:
+        self._compensate.run()
+
     def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> WorkerJob[T, None]:
         """
         Create a WorkerJob with main function f.

@@ -14,12 +14,6 @@ def test_worker_job_create(worker):
     assert isinstance(job, WorkerJob)
 
 
-def test_worker_compensator():
-    comp = SagaCompensator()
-    worker = SagaWorker('1', compensator=comp)
-    assert comp is worker.compensator
-
-
 def test_worker_journal():
     journal = MemoryJournal()
     worker = SagaWorker('1', journal)
@@ -53,7 +47,7 @@ def test_worker_run_compensate(worker):
         compensate_check = int(_x)
 
     worker.job(run_in_worker, x).with_compensation(foo).run()
-    worker.compensator.run()
+    worker.compensate()
     assert compensate_check == x
 
 
@@ -75,6 +69,6 @@ def test_worker_loop_compensate(worker):
 
     for i in range(1, x+1):
         worker.job(run_in_worker, i).with_compensation(foo).run()
-    worker.compensator.run()
+    worker.compensate()
 
     assert compensate_check == x**2/2 + x/2

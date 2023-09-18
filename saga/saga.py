@@ -72,7 +72,7 @@ class SagaJob(Generic[T]):
             try:
                 return f(*args, **kwargs)
             except Exception:
-                self._worker.compensator.run()
+                self._worker.compensate()
                 raise
         return wrap
 
