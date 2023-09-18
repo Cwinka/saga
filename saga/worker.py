@@ -1,8 +1,9 @@
+import copy
 import datetime
 import functools
 import pickle
 import traceback
-from typing import Any, Callable, Concatenate, Generic, Optional, ParamSpec, TypeVar
+from typing import Any, Callable, Concatenate, Generic, Optional, ParamSpec, Type, TypeVar
 
 from saga.compensator import SagaCompensator
 from saga.journal import MemoryJournal, WorkerJournal
@@ -145,6 +146,15 @@ class SagaWorker:
                  _memo: Optional[Memoized] = None):
         self._memo = _memo or Memoized(idempotent_key, journal)
         self._compensate = compensator or SagaCompensator()
+
+    @classmethod
+    def with_journal(cls, journal: WorkerJournal) -> 'Type[SagaWorker]':
+        """
+        Sets default_journal to worker
+        """
+        s = copy.copy(SagaWorker)
+        s.default_journal = journal
+        return s
 
     @property
     def compensator(self) -> SagaCompensator:
