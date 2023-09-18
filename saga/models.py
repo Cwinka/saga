@@ -7,6 +7,8 @@ from typing import Any, Callable, Generic, List, Optional, ParamSpec, TypeVar
 
 P = ParamSpec('P')
 T = TypeVar('T')
+In = TypeVar('In')
+Out = TypeVar('Out')
 
 
 class JobStatus(str, Enum):
@@ -68,3 +70,17 @@ class JobSpec(Generic[P, T]):
         :return: Result of the main function.
         """
         return self.f(*self.args, **self.kwargs)
+
+
+class Event(Generic[In, Out]):
+    def __init__(self, name: str, data: In):
+        self.name = name
+        self.data = data
+
+
+class EventSpec(Generic[In, Out]):
+    def __init__(self, name: str):
+        self.name = name
+
+    def make(self, inp: In) -> Event[In, Out]:
+        return Event(self.name, inp)
