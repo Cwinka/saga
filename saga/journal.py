@@ -32,6 +32,12 @@ class WorkerJournal(ABC):
         """
         pass
 
+    @abstractmethod
+    def delete_records(self, *records: JobRecord) -> None:
+        """
+        Deletes job records.
+        """
+
 
 class MemoryJournal(WorkerJournal):
     def __init__(self, records: Optional[Dict[str, JobRecord]] = None) -> None:
@@ -48,3 +54,7 @@ class MemoryJournal(WorkerJournal):
 
     def update_record(self, record: JobRecord) -> None:
         self._records[record.idempotent_operation_id] = record
+
+    def delete_records(self, *records: JobRecord) -> None:
+        for r in records:
+            del self._records[r.idempotent_operation_id]
