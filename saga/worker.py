@@ -118,13 +118,6 @@ class SagaWorker:
         s.default_journal = journal
         return s
 
-    @property
-    def compensator(self) -> SagaCompensator:
-        """
-        A compensator that is used with worker object.
-        """
-        return self._compensate
-
     def compensate(self) -> None:
         self._compensate.run()
 
