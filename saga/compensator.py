@@ -14,7 +14,7 @@ class SagaCompensator:
     def __init__(self) -> None:
         self._compensations: List[JobSpec[..., None]] = []
 
-    def add_compensate(self, spec: JobSpec[Any, None]) -> None:
+    def add_compensate(self, spec: JobSpec[Any, Any]) -> None:
         """
         Add compensation function.
         """
