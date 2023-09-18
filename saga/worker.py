@@ -8,10 +8,11 @@ from saga.models import JobSpec
 
 P = ParamSpec('P')
 T = TypeVar('T')
-CompensationCallback = Callable[[JobSpec[..., Any]], None]
+C = TypeVar('C')
+CompensationCallback = Callable[[JobSpec[..., C]], None]
 
 
-class WorkerJob(Generic[T]):
+class WorkerJob(Generic[T, C]):
     """
     A WorkerJob is responsible for running functions inside any saga function.
     The main goal of this object is to make control points where execution can continue if
@@ -39,10 +40,10 @@ class WorkerJob(Generic[T]):
     """
 
     def __init__(self, spec: JobSpec[..., T],
-                 comp_set_callback: CompensationCallback = lambda *_: None) -> None:
+                 comp_set_callback: CompensationCallback[C] = lambda *_: None) -> None:
         self._spec = spec
         self._compensation_callback = comp_set_callback
-        self._compensation_spec: Optional[JobSpec[..., None]] = None
+        self._compensation_spec: Optional[JobSpec[..., C]] = None
         self._run: bool = False
         self._crun: bool = False
 
@@ -60,8 +61,8 @@ class WorkerJob(Generic[T]):
             self._compensation_callback(self._compensation_spec.with_arg(r))
         return r
 
-    def with_compensation(self, f: Callable[Concatenate[T, P], Any], *args: P.args,
-                          **kwargs: P.kwargs) -> 'WorkerJob[T]':
+    def with_compensation(self, f: Callable[Concatenate[T, P], C], *args: P.args,
+                          **kwargs: P.kwargs) -> 'WorkerJob[T, C]':
         """
         Adds a compensation function which will be called if any exception happens after running a
         main function but only if the main function has run.
@@ -124,17 +125,18 @@ class SagaWorker:
         """
         return self._compensate
 
-    def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> WorkerJob[T]:
+    def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> WorkerJob[T, None]:
         """
         Create a WorkerJob with main function f.
         :param f: Main function.
         :param args: Any arguments to pass in f function.
         :param kwargs: Any keyword arguments to pass in f function.
         """
-        job = WorkerJob(JobSpec(self._memo.memoize(f), *args, **kwargs),
-                        comp_set_callback=self._place_compensation)
-        return job
+        return WorkerJob[T, None](
+            JobSpec(self._memo.memoize(f), *args, **kwargs),
+            comp_set_callback=self._place_compensation
+        )
 
-    def _place_compensation(self, spec: JobSpec[..., Any]) -> None:
+    def _place_compensation(self, spec: JobSpec[..., None]) -> None:
         spec.f = self._memo.memoize(spec.f)
         self._compensate.add_compensate(spec)
