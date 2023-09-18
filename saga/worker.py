@@ -2,15 +2,15 @@ import datetime
 import functools
 import pickle
 import traceback
-from typing import Callable, Concatenate, Generic, Optional, ParamSpec, TypeVar
+from typing import Any, Callable, Concatenate, Generic, Optional, ParamSpec, TypeVar
 
 from saga.compensator import SagaCompensator
 from saga.journal import MemoryJournal, WorkerJournal
-from saga.models import JobStatus, JobSpec
+from saga.models import JobSpec, JobStatus
 
 P = ParamSpec('P')
 T = TypeVar('T')
-CompensationCallback = Callable[[JobSpec[..., None]], None]
+CompensationCallback = Callable[[JobSpec[..., Any]], None]
 
 
 class WorkerJob(Generic[T]):
@@ -62,7 +62,7 @@ class WorkerJob(Generic[T]):
             self._compensation_callback(self._compensation_spec.with_arg(r))
         return r
 
-    def with_compensation(self, f: Callable[Concatenate[T, P], None], *args: P.args,
+    def with_compensation(self, f: Callable[Concatenate[T, P], Any], *args: P.args,
                           **kwargs: P.kwargs) -> 'WorkerJob[T]':
         """
         Adds a compensation function which will be called if any exception happens after running a
@@ -138,7 +138,7 @@ class SagaWorker:
         raise
     """
 
-    default_journal = MemoryJournal()  # one journal for all workers
+    default_journal: WorkerJournal = MemoryJournal()  # one journal for all workers
 
     def __init__(self, idempotent_key: str, journal: WorkerJournal = default_journal,
                  compensator: Optional[SagaCompensator] = None,
@@ -164,6 +164,6 @@ class SagaWorker:
                         comp_set_callback=self._place_compensation)
         return job
 
-    def _place_compensation(self, spec: JobSpec[..., None]) -> None:
+    def _place_compensation(self, spec: JobSpec[..., Any]) -> None:
         spec.f = self._memo.memoize(spec.f)
         self._compensate.add_compensate(spec)
