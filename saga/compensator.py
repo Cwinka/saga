@@ -20,12 +20,6 @@ class SagaCompensator:
         """
         self._compensations.append(spec)
 
-    def clear(self) -> None:
-        """
-        Clear all added compensation functions.
-        """
-        self._compensations.clear()
-
     def run(self) -> None:
         """
         Runs all added compensation functions.
