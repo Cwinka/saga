@@ -86,3 +86,38 @@ def test_saga_job_compensation(worker):
 
     assert compensation_check == (x**2/2 + x/2) - x, 'Все компенсационные функции должны быть ' \
                                                      'выполнены при исключении.'
+
+
+def test_saga_job_compensation_rerun():
+    x = 42
+    compensation_check = 0
+
+    class SomeError(Exception):
+        pass
+
+    def compensate(_x: int) -> None:
+        nonlocal compensation_check
+        compensation_check += _x
+
+    @idempotent_saga
+    def function(_worker: SagaWorker) -> None:
+        for i in range(10):
+            _worker.job(lambda: random.randint(1, 1000)) \
+                .with_compensation(compensate) \
+                .run()
+        raise SomeError()
+
+    try:
+        function(SagaWorker('1')).wait()
+    except SomeError:
+        pass
+    first_check = compensation_check
+
+    try:
+        function(SagaWorker('1')).wait()
+    except SomeError:
+        pass
+
+    assert compensation_check != first_check, ('Повторный запуск саги с исключением не должен '
+                                               'использовать данные из журнала, когда сага уже '
+                                               'была компенсирована.')
