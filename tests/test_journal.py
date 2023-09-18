@@ -30,3 +30,13 @@ def test_update():
     record.payload = b'42'
     journal.update_record(record)
     assert dct[key] is record
+
+
+def test_delete():
+    key = '1'
+    record = JobRecord(key)
+    dct = {record.idempotent_operation_id: record}
+    journal = MemoryJournal(dct)
+    journal.delete_records(record)
+
+    assert dct == {}
