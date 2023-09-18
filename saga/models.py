@@ -2,13 +2,14 @@ import pickle
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Generic, List, Optional, ParamSpec, TypeVar
+from typing import Any, Callable, Generic, List, Optional, ParamSpec, Type, TypeVar, Union
 
+from pydantic import BaseModel
 
 P = ParamSpec('P')
 T = TypeVar('T')
-In = TypeVar('In')
-Out = TypeVar('Out')
+In = TypeVar('In', bound=BaseModel)
+Out = TypeVar('Out', bound=BaseModel)
 
 
 class JobStatus(str, Enum):
@@ -72,15 +73,26 @@ class JobSpec(Generic[P, T]):
         return self.f(*self.args, **self.kwargs)
 
 
+class Ok(BaseModel):
+    ok: int = 1
+
+
 class Event(Generic[In, Out]):
-    def __init__(self, name: str, data: In):
+    def __init__(self, name: str, rt_name: str, data: In, model_in: Optional[Type[In]] = None,
+                 model_out: Optional[Type[Out]] = None):
         self.name = name
         self.data = data
+        self.model_in = model_in
+        self.model_out = model_out
+        self.ret_name = rt_name
 
 
 class EventSpec(Generic[In, Out]):
-    def __init__(self, name: str):
+    def __init__(self, name: str, model_in: Type[In], model_out: Type[Out]):
         self.name = name
+        self.model_in = model_in
+        self.model_out = model_out
+        self.ret_name = f'r_{name}'
 
     def make(self, inp: In) -> Event[In, Out]:
-        return Event(self.name, inp)
+        return Event(self.name, self.ret_name, inp, self.model_in, self.model_out)

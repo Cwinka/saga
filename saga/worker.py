@@ -1,10 +1,12 @@
 import copy
+import functools
 from typing import Any, Callable, Concatenate, Generic, Optional, ParamSpec, Type, TypeVar
 
 from saga.compensator import SagaCompensator
+from saga.events import EventSender
 from saga.journal import MemoryJournal, WorkerJournal
 from saga.memo import Memoized
-from saga.models import JobSpec
+from saga.models import Event, In, JobSpec, Ok, Out
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -102,11 +104,14 @@ class SagaWorker:
     """
 
     default_journal: WorkerJournal = MemoryJournal()  # one journal for all workers
+    default_events: EventSender = None  # events for all workers
 
     def __init__(self, idempotent_key: str, journal: WorkerJournal = default_journal,
                  compensator: Optional[SagaCompensator] = None,
-                 _memo: Optional[Memoized] = None):
-        self._memo = _memo or Memoized(idempotent_key, journal)
+                 sender: EventSender = default_events):
+        self._memo = Memoized(idempotent_key, journal)
+        self._sender = sender
+        self._idempotent_key = idempotent_key
         self._compensate = compensator or SagaCompensator()
 
     @classmethod
@@ -133,6 +138,27 @@ class SagaWorker:
             comp_set_callback=self._place_compensation
         )
 
+    def event(self, f: Callable[P, Event[In, Out]], *args: P.args,
+              **kwargs: P.kwargs) -> WorkerJob[Out, Event[Out, Any]]:
+        assert self._sender is not None, 'Не установлен отправитель событий.'
+        return WorkerJob[Out, Event[Out, Any]](
+            JobSpec(self._memo.memoize(self._auto_send(f)), *args, **kwargs),
+            comp_set_callback=self._place_event_compensation
+        )
+
+    def _place_event_compensation(self, spec: JobSpec[..., Event[In, Ok]]) -> None:
+        self._compensate.add_compensate(JobSpec(self._memo.memoize(self._auto_send(spec.f)),
+                                                *spec.args, **spec.kwargs))
+
     def _place_compensation(self, spec: JobSpec[..., None]) -> None:
         spec.f = self._memo.memoize(spec.f)
         self._compensate.add_compensate(spec)
+
+    def _auto_send(self, f: Callable[P, Event[Any, Out]]) -> Callable[P, Out]:
+        @functools.wraps(f)
+        def wrap(*args: P.args, **kwargs: P.kwargs) -> Out:
+            event = f(*args, **kwargs)
+            event.ret_name = f'{self._idempotent_key}_{event.ret_name}'
+            self._sender.send(event)
+            return self._sender.wait(event)
+        return wrap
