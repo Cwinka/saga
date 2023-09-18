@@ -2,7 +2,8 @@ import pickle
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Callable, List, Any, Generic, Optional, ParamSpec, TypeVar
+from typing import Any, Callable, Generic, List, Optional, ParamSpec, TypeVar
+
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -39,9 +40,17 @@ class JobSpec(Generic[P, T]):
     """
     def __init__(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
         self.f = f
-        self.args = args
+        self._orig_args = args
         self._args: List[Any] = []
-        self.kwargs = kwargs
+        self._orig_kwargs = kwargs
+
+    @property
+    def args(self) -> tuple[Any, ...]:
+        return tuple([*self._args, *self._orig_args])
+
+    @property
+    def kwargs(self) -> P.kwargs:
+        return self._orig_kwargs
 
     def with_arg(self, arg: Any) -> 'JobSpec[P, T]':
         """
@@ -58,4 +67,4 @@ class JobSpec(Generic[P, T]):
         Execute the main function. Can be called multiple times.
         :return: Result of the main function.
         """
-        return self.f(*self._args, *self.args, **self.kwargs)
+        return self.f(*self.args, **self.kwargs)
