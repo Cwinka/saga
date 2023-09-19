@@ -1,14 +1,15 @@
 import functools
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, ParamSpec
+from typing import Any, Callable, Dict, ParamSpec, Tuple
 
 import redis
 from pydantic import BaseModel
 
-from saga.models import Event, EventSpec, In, Ok, Out
+from saga.models import Event, EventSpec, In, Out
 
 P = ParamSpec('P')
+EventMap = Dict[str, Tuple[BaseModel, BaseModel, Callable[[BaseModel], BaseModel]]]
 
 
 class EventSender(ABC):
@@ -48,6 +49,14 @@ class EventListener(ABC):
     def run_in_thread(self) -> None:
         pass
 
+    @staticmethod
+    def events_map(*events: 'SagaEvents') -> EventMap:
+        _map = {}
+        for ev in events:
+            for spec, handler in ev.handlers.items():
+                _map[spec.name] = (spec.model_in, spec.model_out, handler)
+        return _map
+
 
 class RedisEventSender(EventSender):
 
@@ -72,12 +81,10 @@ class RedisEventListener(EventListener):
 
     def __init__(self, rd: redis.Redis, *events: SagaEvents):
         self._rd = rd
-        self._bind = {}
+        self._bind = self.events_map(*events)
         self._streams = {}
-        for ev in events:
-            for spec, handler in ev.handlers.items():
-                self._bind[spec.name] = (spec, handler)
-                self._streams[spec.name] = '0'
+        for ev in self._bind:
+            self._streams[ev] = '0'
 
     def run_in_thread(self) -> None:
         threading.Thread(target=self._run, daemon=True).start()
@@ -86,7 +93,7 @@ class RedisEventListener(EventListener):
         while True:
             for channel, messages in self._rd.xread(self._streams, len(self._streams), block=1000):
                 for _id, payload in messages:
-                    spec, handler = self._bind[channel]
-                    ret = handler(spec.model_in.model_validate_json(payload['model']))
+                    model_in, _, handler = self._bind[channel]
+                    ret = handler(model_in.model_validate_json(payload['model']))
                     self._rd.xadd(payload['return'], ret.model_dump())
                     self._rd.xdel(channel, _id)
