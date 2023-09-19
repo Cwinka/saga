@@ -1,4 +1,6 @@
 import functools
+import json
+import socket
 import threading
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, ParamSpec, Tuple
@@ -51,11 +53,27 @@ class EventListener(ABC):
 
     @staticmethod
     def events_map(*events: 'SagaEvents') -> EventMap:
-        _map = {}
+        _map: EventMap = {}
         for ev in events:
             for spec, handler in ev.handlers.items():
                 _map[spec.name] = (spec.model_in, spec.model_out, handler)
         return _map
+
+
+class SocketEventSender(EventSender):
+    def __init__(self, file: str):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(file)
+        self._sock = sock
+
+    def send(self, event: Event[Any, Any]) -> None:
+        data = {'event': event.name, 'return': event.ret_name,
+                'model': event.data.model_dump_json()}
+        self._sock.send(json.dumps(data).encode('utf8'))
+
+    def wait(self, event: Event[Any, Out]) -> Out:
+        data = self._sock.recv(1024)
+        return event.model_out.model_validate_json(data)
 
 
 class RedisEventSender(EventSender):
@@ -75,6 +93,31 @@ class RedisEventSender(EventSender):
                     self._rd.xdel(channel, _id)
                     return event.model_out.model_validate(payload)
             self._rd.delete(event.ret_name)
+
+
+class SocketEventListener(EventListener):
+    def __init__(self, file: str, *events: SagaEvents):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.bind(file)
+        self._sock = sock
+        self._map = self.events_map(*events)
+
+    def run_in_thread(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        self._sock.listen()
+        while True:
+            conn, _ = self._sock.accept()
+            self._handle(conn)
+
+    def _handle(self, conn) -> None:
+        while True:
+            data = conn.recv(1024)
+            json_data = json.loads(data)
+            model_in, _, handler = self._map[json_data['event']]
+            ret = handler(model_in.model_validate_json(json_data['model']))
+            conn.send(ret.model_dump_json().encode('utf8'))
 
 
 class RedisEventListener(EventListener):
