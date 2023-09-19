@@ -78,8 +78,8 @@ class Ok(BaseModel):
 
 
 class Event(Generic[In, Out]):
-    def __init__(self, name: str, rt_name: str, data: In, model_in: Optional[Type[In]] = None,
-                 model_out: Optional[Type[Out]] = None):
+    def __init__(self, name: str, rt_name: str, data: In, model_in: Type[In],
+                 model_out: Type[Out]):
         self.name = name
         self.data = data
         self.model_in = model_in

@@ -64,9 +64,7 @@ class RedisEventSender(EventSender):
                                                     block=1000):
                 for _id, payload in messages:
                     self._rd.xdel(channel, _id)
-                    if not isinstance(event.model_out, Ok):
-                        return event.model_out.model_validate(payload)
-                    break
+                    return event.model_out.model_validate(payload)
             self._rd.delete(event.ret_name)
 
 
