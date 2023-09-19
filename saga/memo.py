@@ -29,6 +29,8 @@ class Memoized:
             record = self._journal.get_record(op_id)
             if record is None:
                 record = self._journal.create_record(op_id)
+            # FIXME: также нужно запомнить аргументы вызова, чтобы при запуске с другими
+            #  аргументами возвращался новый результат.
             if record.status == JobStatus.DONE:
                 return pickle.loads(record.payload)  # type: ignore[no-any-return]
             try:
