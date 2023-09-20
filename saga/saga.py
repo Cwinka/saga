@@ -6,11 +6,17 @@ import traceback
 from collections.abc import Callable
 from typing import Concatenate, Generic, Optional, ParamSpec, TypeVar
 
+from pydantic import BaseModel
+
+from saga.compensator import SagaCompensator
+from saga.events import EventSender
+from saga.journal import WorkerJournal, MemoryJournal
 from saga.models import JobRecord, JobStatus
 from saga.worker import SagaWorker
 
 P = ParamSpec('P')
 T = TypeVar('T')
+M = TypeVar('M', bound=BaseModel)
 
 
 class SagaJob(Generic[T]):
@@ -37,13 +43,11 @@ class SagaJob(Generic[T]):
 
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
 
-    def __init__(self, worker: SagaWorker, f: Callable[Concatenate[SagaWorker, P], T],
-                 *args: P.args, **kwargs: P.kwargs):
+    def __init__(self, worker: SagaWorker, f: Callable[[SagaWorker, M], T], data: M):
         self._worker = worker
         self._record = self._get_initial_record(worker)
         self._f_with_compensation = self._compensate_on_exception(f)
-        self._args = args
-        self._kwargs = kwargs
+        self._data = data
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
 
     def run(self, forget_on_complete: bool = False) -> None:
@@ -52,9 +56,8 @@ class SagaJob(Generic[T]):
         """
         if self._result is None:
             self._result = self._pool.apply_async(self._f_with_compensation,
-                                                  args=(self._worker,
-                                                        forget_on_complete, *self._args),
-                                                  kwds=self._kwargs)
+                                                  args=(self._worker, forget_on_complete,
+                                                        self._data),)
 
     def wait(self, timeout: Optional[float] = None, forget_on_complete: bool = False) -> T:
         """
@@ -100,12 +103,16 @@ class SagaJob(Generic[T]):
         return wrap  # type: ignore[return-value]
 
 
-def idempotent_saga(f: Callable[Concatenate[SagaWorker, P], T]) -> \
-        Callable[Concatenate[SagaWorker, P], SagaJob[T]]:
-    """
-    Decorator to mark a function as saga function.
-    """
-    @functools.wraps(f)
-    def wrap(worker: SagaWorker, *args: P.args, **kwargs: P.kwargs) -> SagaJob[T]:
-        return SagaJob(worker, f, *args, **kwargs)
-    return wrap  # type: ignore[return-value]
+class SagaRunner:
+
+    def __init__(self, journal: Optional[WorkerJournal] = None,
+                 sender: Optional[EventSender] = None):
+        self._sender = sender
+        self._journal = journal or MemoryJournal()
+
+    def new(self, idempotent_key: str, saga: Callable[[SagaWorker, M], T], data: M) -> (
+            SagaJob)[T]:
+        # TODO: добавить имя саги к ключу
+        worker = SagaWorker(idempotent_key, journal=self._journal,
+                            compensator=SagaCompensator(), sender=self._sender)
+        return SagaJob(worker, saga, data)

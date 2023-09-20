@@ -1,6 +1,6 @@
 from .compensator import SagaCompensator
 from .journal import WorkerJournal, MemoryJournal
-from .saga import SagaJob, idempotent_saga
+from .saga import SagaJob
 from .worker import SagaWorker, WorkerJob
 
 __all__ = [
@@ -8,7 +8,6 @@ __all__ = [
     'WorkerJob',
     'SagaJob',
     'SagaCompensator',
-    'idempotent_saga',
     'WorkerJournal',
     'MemoryJournal',
 ]
