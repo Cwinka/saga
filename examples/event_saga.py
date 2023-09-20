@@ -3,10 +3,9 @@ import random
 import redis
 from pydantic import BaseModel
 
+from saga import SagaRunner, SagaWorker
 from saga.events import RedisEventListener, RedisEventSender, SagaEvents
 from saga.models import Event, EventSpec, Ok
-from saga.saga import idempotent_saga
-from saga.worker import SagaWorker
 
 
 # shared part
@@ -46,8 +45,7 @@ def roll_event(x: Boo) -> Event[Boo, Ok]:
     return RollEv.make(x)
 
 
-@idempotent_saga
-def saga_2(worker: SagaWorker) -> None:
+def saga_2(worker: SagaWorker, _: Ok) -> None:
     e = worker.event(event).with_compensation(roll_event).run()
     print(worker.job(lambda x: random.randint(1, 1000) + x.boo, e).run())
 
@@ -58,4 +56,7 @@ if __name__ == '__main__':
     sender = RedisEventSender(rd)
     ls.run_in_thread()
 
-    saga_2(SagaWorker('1', sender=sender)).wait()
+    runner = SagaRunner(sender=sender)
+    runner.new('1', saga_2, Ok()).run()
+
+    # runner.run_incomplete() ?
