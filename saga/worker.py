@@ -104,11 +104,11 @@ class SagaWorker:
     """
 
     default_journal: WorkerJournal = MemoryJournal()  # one journal for all workers
-    default_events: EventSender = None  # events for all workers
+    default_sender: EventSender = None  # events for all workers
 
     def __init__(self, idempotent_key: str, journal: WorkerJournal = default_journal,
                  compensator: Optional[SagaCompensator] = None,
-                 sender: EventSender = default_events):
+                 sender: EventSender = default_sender):
         self._memo = Memoized(idempotent_key, journal)
         self._sender = sender
         self._idempotent_key = idempotent_key
@@ -122,6 +122,15 @@ class SagaWorker:
         """
         s = copy.copy(SagaWorker)
         s.default_journal = journal
+        return s
+
+    @classmethod
+    def with_sender(cls, sender: EventSender) -> 'Type[SagaWorker]':
+        """
+        Sets default_sender to worker.
+        """
+        s = copy.copy(SagaWorker)
+        s.default_sender = sender
         return s
 
     @property
