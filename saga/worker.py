@@ -1,10 +1,9 @@
-import copy
 import functools
-from typing import Any, Callable, Concatenate, Generic, Optional, ParamSpec, Type, TypeVar
+from typing import Any, Callable, Concatenate, Generic, Optional, ParamSpec, TypeVar
 
 from saga.compensator import SagaCompensator
 from saga.events import EventSender
-from saga.journal import MemoryJournal, WorkerJournal
+from saga.journal import WorkerJournal
 from saga.memo import Memoized
 from saga.models import Event, In, JobSpec, Ok, Out
 
@@ -161,15 +160,3 @@ class SagaWorker:
             self._sender.send(event)
             return self._sender.wait(event)
         return wrap
-
-
-class WorkerFactory:
-
-    def __init__(self, journal: Optional[WorkerJournal] = None,
-                 sender: Optional[EventSender] = None):
-        self._sender = sender
-        self._journal = journal or MemoryJournal()
-
-    def new(self, idempotent_key: str) -> SagaWorker:
-        return SagaWorker(idempotent_key, journal=self._journal,
-                          compensator=SagaCompensator(), sender=self._sender)
