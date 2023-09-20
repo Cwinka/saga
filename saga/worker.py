@@ -112,6 +112,7 @@ class SagaWorker:
         self._memo = Memoized(idempotent_key, journal)
         self._sender = sender
         self._idempotent_key = idempotent_key
+        self._journal = journal
         self._compensate = compensator or SagaCompensator()
 
     @classmethod
@@ -122,6 +123,14 @@ class SagaWorker:
         s = copy.copy(SagaWorker)
         s.default_journal = journal
         return s
+
+    @property
+    def idempotent_key(self) -> str:
+        return self._idempotent_key
+
+    @property
+    def journal(self) -> WorkerJournal:
+        return self._journal
 
     def compensate(self) -> None:
         self._compensate.run()
