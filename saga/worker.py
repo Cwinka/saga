@@ -126,6 +126,9 @@ class SagaWorker:
     def compensate(self) -> None:
         self._compensate.run()
 
+    def forget_done(self) -> None:
+        self._memo.forget_done()
+
     def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> WorkerJob[T, None]:
         """
         Create a WorkerJob with main function f.

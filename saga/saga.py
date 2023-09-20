@@ -42,39 +42,45 @@ class SagaJob(Generic[T]):
         self._kwargs = kwargs
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
 
-    def run(self) -> None:
+    def run(self, forget_on_complete: bool = False) -> None:
         """
         Run a main function. Non-blocking.
         """
         if self._result is None:
             self._result = self._pool.apply_async(self._f_with_compensation,
-                                                  args=(self._worker, *self._args),
+                                                  args=(self._worker,
+                                                        forget_on_complete, *self._args),
                                                   kwds=self._kwargs)
 
-    def wait(self, timeout: Optional[float] = None) -> T:
+    def wait(self, timeout: Optional[float] = None, forget_on_complete: bool = False) -> T:
         """
         Wait for a main function is executed. Automatically implies run.
         :param timeout: Time in seconds to wait for execution is done.
+        :param forget_on_complete: If True when saga completes it purge all saved journal records
+                                   and can be run with same idempotent key.
         :return: Result of a main function.
         """
         if self._result is None:
-            self.run()
+            self.run(forget_on_complete)
         assert self._result is not None
         return self._result.get(timeout)
 
-    def _compensate_on_exception(self, f: Callable[P, T]) -> Callable[P, T]:
+    def _compensate_on_exception(self, f: Callable[P, T]) -> Callable[Concatenate[bool, P], T]:
         """
         Wraps function f with try except block that runs compensation functions on any exception
         inside f and then reraise an exception.
         """
         @functools.wraps(f)
-        def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
+        def wrap(forget: bool, *args: P.args, **kwargs: P.kwargs) -> T:
             try:
                 return f(*args, **kwargs)
             except Exception:
                 self._worker.compensate()
                 raise
-        return wrap
+            finally:
+                if forget:
+                    self._worker.forget_done()
+        return wrap  # type: ignore[return-value]
 
 
 def idempotent_saga(f: Callable[Concatenate[SagaWorker, P], T]) -> \
