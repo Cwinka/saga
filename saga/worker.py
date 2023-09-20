@@ -103,35 +103,13 @@ class SagaWorker:
         raise
     """
 
-    default_journal: WorkerJournal = MemoryJournal()  # one journal for all workers
-    default_sender: EventSender = None  # events for all workers
-
-    def __init__(self, idempotent_key: str, journal: WorkerJournal = default_journal,
-                 compensator: Optional[SagaCompensator] = None,
-                 sender: EventSender = default_sender):
+    def __init__(self, idempotent_key: str, journal: WorkerJournal,
+                 compensator: SagaCompensator, sender: Optional[EventSender]):
         self._memo = Memoized(idempotent_key, journal)
         self._sender = sender
         self._idempotent_key = idempotent_key
         self._journal = journal
         self._compensate = compensator or SagaCompensator()
-
-    @classmethod
-    def with_journal(cls, journal: WorkerJournal) -> 'Type[SagaWorker]':
-        """
-        Sets default_journal to worker
-        """
-        s = copy.copy(SagaWorker)
-        s.default_journal = journal
-        return s
-
-    @classmethod
-    def with_sender(cls, sender: EventSender) -> 'Type[SagaWorker]':
-        """
-        Sets default_sender to worker.
-        """
-        s = copy.copy(SagaWorker)
-        s.default_sender = sender
-        return s
 
     @property
     def idempotent_key(self) -> str:
@@ -183,3 +161,15 @@ class SagaWorker:
             self._sender.send(event)
             return self._sender.wait(event)
         return wrap
+
+
+class WorkerFactory:
+
+    def __init__(self, journal: Optional[WorkerJournal] = None,
+                 sender: Optional[EventSender] = None):
+        self._sender = sender
+        self._journal = journal or MemoryJournal()
+
+    def new(self, idempotent_key: str) -> SagaWorker:
+        return SagaWorker(idempotent_key, journal=self._journal,
+                          compensator=SagaCompensator(), sender=self._sender)
