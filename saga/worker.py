@@ -153,8 +153,10 @@ class SagaWorker:
         self._compensate.add_compensate(spec)
 
     def _auto_send(self, f: Callable[P, Event[Any, Out]]) -> Callable[P, Out]:
+
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> Out:
+            assert self._sender is not None, 'Не установлен отправитель событий.'
             event = f(*args, **kwargs)
             event.ret_name = f'{self._idempotent_key}_{event.ret_name}'
             self._sender.send(event)
