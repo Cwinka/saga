@@ -136,7 +136,7 @@ class SagaRunner:
         assert hasattr(saga, SAGA_NAME_ATTR), (f'Функция "{saga.__name__}" не является сагой. '
                                                f'Используйте декоратор "{idempotent_saga.__name__}"'
                                                f' чтобы отметить функцию как сагу.')
-        idempotent_key = self._join_key(idempotent_key, getattr(saga, SAGA_NAME_ATTR))
+        idempotent_key = self.join_key(idempotent_key, getattr(saga, SAGA_NAME_ATTR))
         worker = SagaWorker(idempotent_key, journal=self._worker_journal,
                             compensator=SagaCompensator(), sender=self._sender)
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done)
@@ -173,7 +173,7 @@ class SagaRunner:
         return cls._sagas.get(name)
 
     @staticmethod
-    def _join_key(idempotent_key: str, saga_name: str) -> str:
+    def join_key(idempotent_key: str, saga_name: str) -> str:
         clear_key = idempotent_key.replace(SAGA_KEY_SEPARATOR, '-')
         clear_name = saga_name.replace(SAGA_KEY_SEPARATOR, '-')
         return f'{clear_key}{SAGA_KEY_SEPARATOR}{clear_name}'
