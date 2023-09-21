@@ -10,13 +10,14 @@ from pydantic import BaseModel
 
 from saga.compensator import SagaCompensator
 from saga.events import EventSender
-from saga.journal import WorkerJournal, MemoryJournal
-from saga.models import JobRecord, JobStatus
+from saga.journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
+from saga.models import JobStatus, SagaRecord
 from saga.worker import SagaWorker
 
 P = ParamSpec('P')
 T = TypeVar('T')
 M = TypeVar('M', bound=BaseModel)
+SAGA_NAME_ATTR = '__saga_name__'
 
 
 class SagaJob(Generic[T]):
@@ -43,17 +44,19 @@ class SagaJob(Generic[T]):
 
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
 
-    def __init__(self, worker: SagaWorker, saga: Callable[[SagaWorker, M], T], data: M,
+    def __init__(self, journal: SagaJournal, worker: SagaWorker,
+                 saga: Callable[[SagaWorker, M], T], data: M,
                  forget_done: bool = False) -> None:
         """
+        :param journal: Журнал саги.
         :param worker: Обработчик функций саги.
         :param saga: Функция саги.
         :param data: Входные данные саги, если данных нет, используется Ok.
         :param forget_done: If True when saga completes it purge all saved journal records
                            and can be run with same idempotent key.
         """
+        self._journal = journal
         self._worker = worker
-        self._record = self._get_initial_record(worker)
         self._f_with_compensation = self._compensate_on_exception(saga)
         self._forget_done = forget_done
         self._data = data
@@ -64,6 +67,9 @@ class SagaJob(Generic[T]):
         Run a main function. Non-blocking.
         """
         if self._result is None:
+            saga = self._get_saga()
+            saga.initial_data = self._data.model_dump_json().encode('utf8')
+            self._journal.update_saga(saga)
             self._result = self._pool.apply_async(self._f_with_compensation,
                                                   args=(self._worker, self._data))
 
@@ -78,11 +84,10 @@ class SagaJob(Generic[T]):
         assert self._result is not None
         return self._result.get(timeout)
 
-    @staticmethod
-    def _get_initial_record(worker: SagaWorker) -> JobRecord:
-        record = worker.journal.get_record(worker.idempotent_key)
+    def _get_saga(self) -> SagaRecord:
+        record = self._journal.get_saga(self._worker.idempotent_key)
         if record is None:
-            record = worker.journal.create_record(worker.idempotent_key)
+            record = self._journal.create_saga(self._worker.idempotent_key)
         return record
 
     def _compensate_on_exception(self, f: Callable[P, T]) -> Callable[Concatenate[bool, P], T]:
@@ -92,36 +97,40 @@ class SagaJob(Generic[T]):
         """
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
+            saga = self._get_saga()
             try:
-                self._record.status = JobStatus.DONE
+                saga.status = JobStatus.DONE
                 return f(*args, **kwargs)
             except Exception as e:
-                self._record.status = JobStatus.FAILED
-                # self._record.failed_time = datetime.datetime.now()
-                # self._record.error = str(e)
-                # self._record.traceback = traceback.format_exc()
+                saga.status = JobStatus.FAILED
+                saga.failed_time = datetime.datetime.now()
+                saga.error = str(e)
+                saga.traceback = traceback.format_exc()
                 self._worker.compensate()
                 raise
             finally:
-                self._worker.journal.update_record(self._record)
+                self._journal.update_saga(saga)
                 if self._forget_done:
-                    self._worker.journal.delete_records(self._record)
+                    self._journal.delete_sagas(saga.idempotent_key)
                     self._worker.forget_done()
         return wrap  # type: ignore[return-value]
 
 
 class SagaRunner:
 
-    def __init__(self, journal: Optional[WorkerJournal] = None,
+    def __init__(self,
+                 saga_journal: Optional[SagaJournal] = None,
+                 worker_journal: Optional[WorkerJournal] = None,
                  sender: Optional[EventSender] = None,
                  forget_done: bool = False):
         self._forget_done = forget_done
         self._sender = sender
-        self._journal = journal or MemoryJournal()
+        self._worker_journal = worker_journal or MemoryJournal()
+        self._saga_journal = saga_journal or MemorySagaJournal()
 
     def new(self, idempotent_key: str, saga: Callable[[SagaWorker, M], T], data: M) -> (
             SagaJob)[T]:
         # TODO: добавить имя саги к ключу
-        worker = SagaWorker(idempotent_key, journal=self._journal,
+        worker = SagaWorker(idempotent_key, journal=self._worker_journal,
                             compensator=SagaCompensator(), sender=self._sender)
-        return SagaJob(worker, saga, data, forget_done=self._forget_done)
+        return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done)
