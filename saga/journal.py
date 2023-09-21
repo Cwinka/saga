@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
-from saga.models import JobRecord, SagaRecord
+from saga.models import JobRecord, JobStatus, SagaRecord
 
 
 class SagaJournal(ABC):
@@ -27,6 +27,12 @@ class SagaJournal(ABC):
     def delete_sagas(self, *idempotent_keys: str) -> None:
         """
         Deletes saga records.
+        """
+
+    @abstractmethod
+    def get_incomplete_saga(self) -> List[SagaRecord]:
+        """
+        Return list of incomplete sagas.
         """
 
 
@@ -82,6 +88,9 @@ class MemorySagaJournal(SagaJournal):
     def delete_sagas(self, *idempotent_keys: str) -> None:
         for key in idempotent_keys:
             del self._sagas[key]
+
+    def get_incomplete_saga(self) -> List[SagaRecord]:
+        return [x for x in self._sagas.values() if x.status == JobStatus.RUNNING]
 
 
 class MemoryJournal(WorkerJournal):
