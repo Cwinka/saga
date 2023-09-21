@@ -15,11 +15,11 @@ def float_return(worker: SagaWorker, _) -> float:
     return 42.0
 
 
-def test_saga_job(worker):
+def test_saga_job(saga_journal, worker):
     def foo(_worker: SagaWorker, _) -> int:
         return 1
 
-    job = SagaJob(worker, foo, Ok())
+    job = SagaJob(saga_journal, worker, foo, Ok())
     assert isinstance(job, SagaJob)
 
 
@@ -27,9 +27,9 @@ def test_saga_job(worker):
     (str_return, '42'),
     (float_return, 42.0),
 ])
-def test_saga_job_run(worker, test_function, expected_result):
+def test_saga_job_run(saga_journal, worker, test_function, expected_result):
 
-    job = SagaJob(worker, test_function, Ok())
+    job = SagaJob(saga_journal, worker, test_function, Ok())
     job.run()
 
     result = job.wait()
@@ -37,23 +37,23 @@ def test_saga_job_run(worker, test_function, expected_result):
            result == expected_result, 'Результат выполнения саги возвращается некорректно.'
 
 
-def test_saga_job_idempotent(journal, compensator):
+def test_saga_job_idempotent(saga_journal, wk_journal, compensator):
     def sum_return(worker: SagaWorker, _) -> int:
         s = 0
         for _ in range(10):
             s += worker.job(random.randint, 0, 1000).run()
         return s
 
-    wk1 = SagaWorker('1', journal, compensator, None)
-    wk2 = SagaWorker('1', journal, compensator, None)
+    wk1 = SagaWorker('1', wk_journal, compensator, None)
+    wk2 = SagaWorker('1', wk_journal, compensator, None)
 
-    result1 = SagaJob(wk1, sum_return, Ok()).wait()
-    result2 = SagaJob(wk2, sum_return, Ok()).wait()
+    result1 = SagaJob(saga_journal, wk1, sum_return, Ok()).wait()
+    result2 = SagaJob(saga_journal, wk2, sum_return, Ok()).wait()
 
     assert result1 == result2, 'Запуск саг с одинаковыми ключами должен давать один результат.'
 
 
-def test_saga_job_compensation(worker):
+def test_saga_job_compensation(worker, saga_journal):
 
     x = 42
     compensation_check = 0
@@ -71,7 +71,7 @@ def test_saga_job_compensation(worker):
                 raise SomeError
             _worker.job(lambda: i).with_compensation(compensate).run()
 
-    job = SagaJob(worker, function, Ok())
+    job = SagaJob(saga_journal, worker, function, Ok())
 
     try:
         job.wait()
