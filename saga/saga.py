@@ -130,7 +130,18 @@ class SagaRunner:
 
     def new(self, idempotent_key: str, saga: Callable[[SagaWorker, M], T], data: M) -> (
             SagaJob)[T]:
+        assert hasattr(saga, SAGA_NAME_ATTR), (f'Функция "{saga.__name__}" не является сагой. '
+                                               f'Используйте декоратор "{idempotent_saga.__name__}"'
+                                               f' чтобы отметить функцию как сагу.')
         # TODO: добавить имя саги к ключу
         worker = SagaWorker(idempotent_key, journal=self._worker_journal,
                             compensator=SagaCompensator(), sender=self._sender)
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done)
+
+
+def idempotent_saga(name: str) \
+        -> Callable[[Callable[[SagaWorker, M], T]], Callable[[SagaWorker, M], T]]:
+    def decorator(f: Callable[[SagaWorker, M], T]) -> Callable[[SagaWorker, M], T]:
+        setattr(f, SAGA_NAME_ATTR, name)
+        return f
+    return decorator
