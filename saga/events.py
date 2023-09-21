@@ -26,6 +26,36 @@ class EventSender(ABC):
         pass
 
 
+class EventListener(ABC):
+
+    @abstractmethod
+    def run_in_thread(self) -> None:
+        pass
+
+    @staticmethod
+    def events_map(*events: 'SagaEvents') -> EventMap:
+        _map: EventMap = {}
+        for ev in events:
+            for spec, handler in ev.handlers.items():
+                _map[spec.name] = (spec.model_in, spec.model_out, handler)
+        return _map
+
+
+class CommunicationFactory(ABC):
+
+    @abstractmethod
+    def listener(self, *events: 'SagaEvents') -> EventListener:
+        """
+        Listener object that waits for incoming event and route it to proper function.
+        """
+
+    @abstractmethod
+    def sender(self) -> EventSender:
+        """
+        Event sender object that sends events to listener.
+        """
+
+
 class SagaEvents:
 
     def __init__(self) -> None:
@@ -46,21 +76,6 @@ class SagaEvents:
         return wrap
 
 
-class EventListener(ABC):
-
-    @abstractmethod
-    def run_in_thread(self) -> None:
-        pass
-
-    @staticmethod
-    def events_map(*events: 'SagaEvents') -> EventMap:
-        _map: EventMap = {}
-        for ev in events:
-            for spec, handler in ev.handlers.items():
-                _map[spec.name] = (spec.model_in, spec.model_out, handler)
-        return _map
-
-
 class SocketEventSender(EventSender):
     def __init__(self, file: str):
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -75,25 +90,6 @@ class SocketEventSender(EventSender):
     def wait(self, event: Event[Any, Out]) -> Out:
         data = self._sock.recv(1024)
         return event.model_out.model_validate_json(data)
-
-
-class RedisEventSender(EventSender):
-
-    def __init__(self, rd: redis.Redis):
-        self._rd = rd
-
-    def send(self, event: Event[Any, Any]) -> None:
-        self._rd.xadd(event.name, {'return': event.ret_name,
-                                   'model': event.data.model_dump_json()})
-
-    def wait(self, event: Event[Any, Out]) -> Out:
-        while True:
-            for channel, messages in self._rd.xread({event.ret_name: '0'}, 1,
-                                                    block=1000):
-                for _id, payload in messages:
-                    self._rd.xdel(channel, _id)
-                    return event.model_out.model_validate(payload)
-            self._rd.delete(event.ret_name)
 
 
 class SocketEventListener(EventListener):
@@ -122,6 +118,25 @@ class SocketEventListener(EventListener):
             conn.send(ret.model_dump_json().encode('utf8'))
 
 
+class RedisEventSender(EventSender):
+
+    def __init__(self, rd: redis.Redis):
+        self._rd = rd
+
+    def send(self, event: Event[Any, Any]) -> None:
+        self._rd.xadd(event.name, {'return': event.ret_name,
+                                   'model': event.data.model_dump_json()})
+
+    def wait(self, event: Event[Any, Out]) -> Out:
+        while True:
+            for channel, messages in self._rd.xread({event.ret_name: '0'}, 1,
+                                                    block=1000):
+                for _id, payload in messages:
+                    self._rd.xdel(channel, _id)
+                    return event.model_out.model_validate_json(payload['model'])
+            self._rd.delete(event.ret_name)
+
+
 class RedisEventListener(EventListener):
 
     def __init__(self, rd: redis.Redis, *events: SagaEvents):
@@ -140,5 +155,29 @@ class RedisEventListener(EventListener):
                 for _id, payload in messages:
                     model_in, _, handler = self._bind[channel]
                     ret = handler(model_in.model_validate_json(payload['model']))
-                    self._rd.xadd(payload['return'], ret.model_dump())
+                    self._rd.xadd(payload['return'], {'model': ret.model_dump_json()})
                     self._rd.xdel(channel, _id)
+
+
+class RedisCommunicationFactory(CommunicationFactory):
+
+    def __init__(self, rd: redis.Redis):
+        self._rd = rd
+
+    def listener(self, *events: SagaEvents) -> RedisEventListener:
+        return RedisEventListener(self._rd, *events)
+
+    def sender(self) -> RedisEventSender:
+        return RedisEventSender(self._rd)
+
+
+class SocketCommunicationFactory(CommunicationFactory):
+
+    def __init__(self, file: str):
+        self._file = file
+
+    def listener(self, *events: SagaEvents) -> SocketEventListener:
+        return SocketEventListener(self._file, *events)
+
+    def sender(self) -> SocketEventSender:
+        return SocketEventSender(self._file)
