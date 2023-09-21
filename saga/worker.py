@@ -42,6 +42,11 @@ class WorkerJob(Generic[T, C]):
 
     def __init__(self, spec: JobSpec[..., T],
                  comp_set_callback: CompensationCallback[C] = lambda *_: None) -> None:
+        """
+        :param spec: A function specification.
+        :param comp_set_callback: Compensation callback that is called when a function in spec is
+                                  executed and a compensation function is set to the job.
+        """
         self._spec = spec
         self._compensation_callback = comp_set_callback
         self._compensation_spec: Optional[JobSpec[..., C]] = None
@@ -50,9 +55,9 @@ class WorkerJob(Generic[T, C]):
 
     def run(self) -> T:
         """
-        Runs a main function with associated arguments and keyword arguments.
+        Runs the main function.
         This method can only be executed once.
-        :return: Result of a funtion.
+        :return: Result of the main funtion.
         """
         assert not self._run, 'Main function has already been executed. Create a new job to run ' \
                               'another function.'
@@ -65,9 +70,9 @@ class WorkerJob(Generic[T, C]):
     def with_compensation(self, f: Callable[Concatenate[T, P], C], *args: P.args,
                           **kwargs: P.kwargs) -> 'WorkerJob[T, C]':
         """
-        Adds a compensation function which will be called if any exception happens after running a
+        Adds a compensation function which will be called if any exception happens after running the
         main function but only if the main function has run.
-        :param f: Compensation function. The first argument is always a result of a main function.
+        :param f: Compensation function. The first argument is always a result of the main function.
         :param args: Any arguments to pass in f function.
         :param kwargs: Any keyword arguments to pass in f function.
         :return: The same WorkerJob object.
@@ -77,7 +82,7 @@ class WorkerJob(Generic[T, C]):
 
     def compensate(self) -> None:
         """
-        Runs a compensation of the main function is a compensation exists.
+        Runs a compensation of the main function if a compensation exists.
         This method can only be executed once.
         """
         assert self._run, 'Main function has not been executed. Nothing to compensate.'
@@ -104,6 +109,12 @@ class SagaWorker:
 
     def __init__(self, idempotent_key: str, journal: WorkerJournal,
                  compensator: SagaCompensator, sender: Optional[EventSender]):
+        """
+        :param idempotent_key: Unique key of a worker.
+        :param journal: Worker journal to store job execution results.
+        :param compensator: Compensator object to rollback executed jobs.
+        :param sender: EventSender object to send events if omitted `event` method cannot be used.
+        """
         self._memo = Memoized(idempotent_key, journal)
         self._sender = sender
         self._idempotent_key = idempotent_key
@@ -112,17 +123,26 @@ class SagaWorker:
 
     @property
     def idempotent_key(self) -> str:
+        """
+        Unique idempotent key of the worker.
+        """
         return self._idempotent_key
 
     def compensate(self) -> None:
+        """
+        Runs all compensations if any.
+        """
         self._compensate.run()
 
     def forget_done(self) -> None:
+        """
+        Forgets all records in the journal allowing run with the same idempotent key.
+        """
         self._memo.forget_done()
 
     def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> WorkerJob[T, None]:
         """
-        Create a WorkerJob with main function f.
+        Creates a WorkerJob with main function f.
         :param f: Main function.
         :param args: Any arguments to pass in f function.
         :param kwargs: Any keyword arguments to pass in f function.
@@ -134,6 +154,12 @@ class SagaWorker:
 
     def event(self, f: Callable[P, Event[In, Out]], *args: P.args,
               **kwargs: P.kwargs) -> WorkerJob[Out, Event[Out, Any]]:
+        """
+        Creates a WorkerJob that sends returning event and waits it to come back.
+        :param f: A function that returns an event.
+        :param args: Any arguments to pass in f function.
+        :param kwargs: Any keyword arguments to pass in f function.
+        """
         assert self._sender is not None, 'Не установлен отправитель событий.'
         return WorkerJob[Out, Event[Out, Any]](
             JobSpec(self._memo.memoize(self._auto_send(f)), *args, **kwargs),

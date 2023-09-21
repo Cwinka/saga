@@ -10,6 +10,7 @@ class SagaCompensator:
     SagaCompensator is used if an exception happens in saga function. When an exception is raised
     first of all compensation functions are executed (in reverse order which they were added) and
     then exception is reraised.
+    SagaCompensator can be used with a single SagaWorker at a time.
     """
     def __init__(self) -> None:
         self._compensations: List[JobSpec[..., None]] = []

@@ -118,7 +118,52 @@ class SagaJob(Generic[T]):
 
 
 class SagaRunner:
+    """
+    SagaRunner is a factory class that manipulates SagaJob objects.
 
+    To register a faction as a saga two methods can be used:
+
+        # using decorator
+        @idempotent_saga('saga_name')
+        def my_saga(worker: SagaWorker, _: Ok) -> Ok:
+            ...
+
+        # or register function manually:
+
+        def my_saga(worker: SagaWorker, _: Ok) -> Ok:
+            ...
+
+        SagaRunner.register_saga('saga_name', my_saga)
+
+    First argument of any saga is a SagaWorker object that SagaRunner provides automatically to
+    any saga. Second argument is an input data of a saga, and it must be a subtype of the
+    `pydantic.BaseModel` class. If a saga function does not need input data a special `Ok` class
+    can be used to pass it in a saga.
+
+    To start any saga method `new` is used:
+
+        runner = SagaRunner()
+
+        saga = runner.new('idempotent_key', my_saga, Ok())
+        saga.run()  # to run in a non-blocking mode.
+        saga.wait()  # to run in a blocking mode.
+
+    The first argument of `new` method is idempotent key string that is unique across runs. If
+    the same saga runs with a used idempotent key it provides the same result as the previous
+    run with this idempotent key.
+
+    The `SagaJob.wait` method can raise an exception if it happens inside a saga, so it must be
+    used with try except block to process code further.
+
+    Any saga can end up in an incomplete state (neither in `SagaStatus.DONE` nor
+    `SagaStatus.FAILED` but in `SagaStatus.RUNNING` state) because of unexpected exit or power
+    failure. Incomplete sagas can be re-executed to finish it properly:
+
+        journal = SagaJournalImplementation()
+        runner = SagaRunner(saga_journal=journal)
+
+        runner.run_incomplete()  # returns number of started sagas.
+    """
     _sagas: Dict[str, Callable[[SagaWorker, M], Any]] = {}
 
     def __init__(self,
@@ -133,6 +178,13 @@ class SagaRunner:
 
     def new(self, idempotent_key: str, saga: Callable[[SagaWorker, M], T], data: M) -> (
             SagaJob)[T]:
+        """
+        Creates new SagaJob object to run saga.
+
+        :param idempotent_key: Unique key for saga execution.
+        :param saga: Registered saga function.
+        :param data: Input data of a saga.
+        """
         assert hasattr(saga, SAGA_NAME_ATTR), (f'Функция "{saga.__name__}" не является сагой. '
                                                f'Используйте декоратор "{idempotent_saga.__name__}"'
                                                f' чтобы отметить функцию как сагу.')
@@ -143,7 +195,7 @@ class SagaRunner:
 
     def run_incomplete(self) -> int:
         """
-        Rerun all incomplete sagas. Returns the number of running sagas.
+        Rerun all incomplete sagas. Returns the number of running sagas. Does not block execution.
         """
         i = 0
         for i, saga in enumerate(self._saga_journal.get_incomplete_saga(), 1):
@@ -165,15 +217,24 @@ class SagaRunner:
 
     @classmethod
     def register_saga(cls, name: str, saga: Callable[[SagaWorker, M], Any]) -> None:
+        """
+        Registers a saga function with a given name.
+        """
         setattr(saga, SAGA_NAME_ATTR, name)
         cls._sagas[name] = saga
 
     @classmethod
     def get_saga(cls, name: str) -> Optional[Callable[[SagaWorker, M], Any]]:
+        """
+        Returns registered saga function with a given name.
+        """
         return cls._sagas.get(name)
 
     @staticmethod
     def join_key(idempotent_key: str, saga_name: str) -> str:
+        """
+        Returns a string that can be used to retrieve SagaRecord object from SagaJournal.
+        """
         clear_key = idempotent_key.replace(SAGA_KEY_SEPARATOR, '-')
         clear_name = saga_name.replace(SAGA_KEY_SEPARATOR, '-')
         return f'{clear_key}{SAGA_KEY_SEPARATOR}{clear_name}'
@@ -186,6 +247,9 @@ class SagaRunner:
 
 def idempotent_saga(name: str) \
         -> Callable[[Callable[[SagaWorker, M], T]], Callable[[SagaWorker, M], T]]:
+    """
+    Register a function like a saga function in SagaRunner.
+    """
     def decorator(f: Callable[[SagaWorker, M], T]) -> Callable[[SagaWorker, M], T]:
         SagaRunner.register_saga(name, f)
         return f

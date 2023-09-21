@@ -10,6 +10,10 @@ T = TypeVar('T')
 
 
 class Memoized:
+    """
+    Memoized object is used to memorize return of any function and store it in journal.
+    Object can be used with single SagaWorker and must reinitialize for another worker.
+    """
     def __init__(self, memo_prefix: str, journal: WorkerJournal):
         self._journal = journal
         self._memo_prefix = memo_prefix
@@ -21,6 +25,9 @@ class Memoized:
         return f'{self._memo_prefix}_{self._operation_id}'
 
     def forget_done(self) -> None:
+        """
+        Clears all done operations
+        """
         self._journal.delete_records(*self._done)
 
     def memoize(self, f: Callable[P, T]) -> Callable[P, T]:

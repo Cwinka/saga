@@ -14,11 +14,11 @@ Out = TypeVar('Out', bound=BaseModel)
 
 class JobStatus(str, Enum):
     RUNNING = 'RUNNING'
-    """ Method running inside saga. """
+    """ Method/saga is running. """
     DONE = 'DONE'
-    """ Method has been executed inside saga. """
+    """ Method/saga is executed with no errors. """
     FAILED = 'FAILED'
-    """ Method has encourage an exception during execution. """
+    """ Method/saga is executed with errors. """
 
 
 @dataclass
@@ -76,12 +76,25 @@ class JobSpec(Generic[P, T]):
 
 
 class Ok(BaseModel):
+    """
+    Class is used to tell that is nothing to return or accept.
+    """
     ok: int = 1
 
 
 class Event(Generic[In, Out]):
+    """
+    Event is an object that route event and holds its data and models.
+    """
     def __init__(self, name: str, rt_name: str, data: In, model_in: Type[In],
                  model_out: Type[Out]):
+        """
+        :param name: Event name.
+        :param rt_name: Returning event name.
+        :param data: Instance of input data.
+        :param model_in: Input model of event.
+        :param model_out: Output model of event.
+        """
         self.name = name
         self.data = data
         self.model_in = model_in
@@ -90,11 +103,38 @@ class Event(Generic[In, Out]):
 
 
 class EventSpec(Generic[In, Out]):
+    """
+    Event specification/factory object. It holds information about an event like its input and
+    output models.
+    Example of EventSpec:
+
+        spec = EventSpec('create_it', InputModel, OutputModel)
+
+    EventSpec can be used to create an Event with annotated models:
+
+        spec.make(InputModel())
+
+    EventSpec can be used with a SagaEvents like this:
+
+        events = SagaEvents()
+
+        @events.entry(spec)
+        def event(inp: InputModel) -> OutputModel:
+            ...
+    """
     def __init__(self, name: str, model_in: Type[In], model_out: Type[Out]):
+        """
+        :param name: Event name.
+        :param model_in: Input model of event.
+        :param model_out: Output model of event.
+        """
         self.name = name
         self.model_in = model_in
         self.model_out = model_out
         self.ret_name = f'r_{name}'
 
     def make(self, inp: In) -> Event[In, Out]:
+        """
+        Creates annotated Event with input data inp.
+        """
         return Event(self.name, self.ret_name, inp, self.model_in, self.model_out)

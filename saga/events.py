@@ -16,17 +16,28 @@ EventMap = Dict[str, Tuple[BaseModel, BaseModel, Callable[[BaseModel], BaseModel
 
 
 class EventSender(ABC):
+    """
+    EventSender is responsible for sending events to EventListener.
+    """
 
     @abstractmethod
     def send(self, event: Event[Any, Any]) -> None:
-        pass
+        """
+        Sends event based on event specification.
+        """
 
     @abstractmethod
     def wait(self, event: Event[Any, Out]) -> Out:
-        pass
+        """
+        Wait for event return result. Method can be used only if event was sent.
+        """
 
 
 class EventListener(ABC):
+    """
+    EventListener is responsible for receiving events from EventSender.
+    When an event is accepted EventListener routes it to a proper event handler function.
+    """
 
     @abstractmethod
     def run_in_thread(self) -> None:
@@ -34,6 +45,14 @@ class EventListener(ABC):
 
     @staticmethod
     def events_map(*events: 'SagaEvents') -> EventMap:
+        """
+        Returns EventMap specification of events.
+        Values of EventMap is: (
+            Event input model,
+            Event output model,
+            Callback that accepts instance of input model and returns instance of output model
+        )
+        """
         _map: EventMap = {}
         for ev in events:
             for spec, handler in ev.handlers.items():
@@ -42,6 +61,9 @@ class EventListener(ABC):
 
 
 class CommunicationFactory(ABC):
+    """
+    Factory class for creating EventListener and EventSender objects.
+    """
 
     @abstractmethod
     def listener(self, *events: 'SagaEvents') -> EventListener:
@@ -57,6 +79,9 @@ class CommunicationFactory(ABC):
 
 
 class SagaEvents:
+    """
+    SagaEvents is an events storage, like ApiRouter.
+    """
 
     def __init__(self) -> None:
         self._handlers: Dict[EventSpec[Any, Any], Callable[[Any], Any]] = {}

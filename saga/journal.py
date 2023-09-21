@@ -5,6 +5,11 @@ from saga.models import JobRecord, JobStatus, SagaRecord
 
 
 class SagaJournal(ABC):
+    """
+    Abstract saga journal to keep track of any saga execution.
+    Each saga must have a unique idempotent key associated with it.
+    """
+
     @abstractmethod
     def get_saga(self, idempotent_key: str) -> Optional[SagaRecord]:
         """
