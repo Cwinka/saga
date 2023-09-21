@@ -4,7 +4,7 @@ import os
 import socket
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, ParamSpec, Tuple
+from typing import Any, Callable, Dict, ParamSpec, Tuple, Optional
 
 import redis
 from pydantic import BaseModel
@@ -78,17 +78,29 @@ class SagaEvents:
 
 class SocketEventSender(EventSender):
     def __init__(self, file: str):
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.connect(file)
-        self._sock = sock
+        self._file = file
+        self._sock: Optional[socket.socket] = None
+
+    def _connect(self) -> None:
+        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._sock.connect(self._file)
+
+    def _disconnect(self) -> None:
+        assert self._sock is not None
+        self._sock.close()
+        self._sock = None
 
     def send(self, event: Event[Any, Any]) -> None:
         data = {'event': event.name, 'return': event.ret_name,
                 'model': event.data.model_dump_json()}
+        self._connect()
+        assert self._sock is not None
         self._sock.send(json.dumps(data).encode('utf8'))
 
     def wait(self, event: Event[Any, Out]) -> Out:
+        assert self._sock is not None, 'No data has been sent, nothing to wait.'
         data = self._sock.recv(1024)
+        self._disconnect()
         return event.model_out.model_validate_json(data)
 
 
