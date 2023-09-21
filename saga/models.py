@@ -22,6 +22,22 @@ class JobStatus(str, Enum):
 
 
 @dataclass
+class SagaRecord:
+    idempotent_key: str
+    """ A unique key of a saga. """
+    status: JobStatus = JobStatus.RUNNING
+    """ Current status of an operation. """
+    initial_data: bytes = pickle.dumps(None)
+    """ Return content of an operation. """
+    traceback: Optional[str] = None
+    """ Traceback of an operation """
+    error: Optional[str] = None
+    """ Error message of an operation """
+    failed_time: Optional[datetime] = None
+    """ Error time when exception happened. """
+
+
+@dataclass
 class JobRecord:
     idempotent_operation_id: str
     """ A unique key of an operation inside saga. """
