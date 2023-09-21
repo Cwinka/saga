@@ -4,7 +4,7 @@ import os
 import socket
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, ParamSpec, Tuple, Optional
+from typing import Any, Callable, Dict, Optional, ParamSpec, Tuple, Type
 
 import redis
 from pydantic import BaseModel
@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from saga.models import Event, EventSpec, In, Out
 
 P = ParamSpec('P')
-EventMap = Dict[str, Tuple[BaseModel, BaseModel, Callable[[BaseModel], BaseModel]]]
+EventMap = Dict[str, Tuple[Type[BaseModel], Type[BaseModel], Callable[[BaseModel], BaseModel]]]
 
 
 class EventSender(ABC):
@@ -87,7 +87,7 @@ class SagaEvents:
         self._handlers: Dict[EventSpec[Any, Any], Callable[[Any], Any]] = {}
 
     @property
-    def handlers(self) -> Dict[EventSpec[Any, Any], Callable[[Any], BaseModel]]:
+    def handlers(self) -> Dict[EventSpec[BaseModel, BaseModel], Callable[[BaseModel], BaseModel]]:
         return self._handlers
 
     def entry(self, spec: EventSpec[In, Out]) -> Callable[[Callable[[In], Out]],
@@ -146,7 +146,7 @@ class SocketEventListener(EventListener):
             conn, _ = self._sock.accept()
             self._handle(conn)
 
-    def _handle(self, conn) -> None:
+    def _handle(self, conn: socket.socket) -> None:
         while True:
             data = conn.recv(1024)
             json_data = json.loads(data)
