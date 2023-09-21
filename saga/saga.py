@@ -4,7 +4,7 @@ import multiprocessing.pool
 import os
 import traceback
 from collections.abc import Callable
-from typing import Concatenate, Generic, Optional, ParamSpec, TypeVar
+from typing import Any, Concatenate, Dict, Generic, Optional, ParamSpec, Tuple, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -18,6 +18,7 @@ P = ParamSpec('P')
 T = TypeVar('T')
 M = TypeVar('M', bound=BaseModel)
 SAGA_NAME_ATTR = '__saga_name__'
+SAGA_KEY_SEPARATOR = '&'
 
 
 class SagaJob(Generic[T]):
@@ -118,6 +119,8 @@ class SagaJob(Generic[T]):
 
 class SagaRunner:
 
+    _sagas: Dict[str, Callable[[SagaWorker, M], Any]] = {}
+
     def __init__(self,
                  saga_journal: Optional[SagaJournal] = None,
                  worker_journal: Optional[WorkerJournal] = None,
@@ -133,15 +136,57 @@ class SagaRunner:
         assert hasattr(saga, SAGA_NAME_ATTR), (f'Функция "{saga.__name__}" не является сагой. '
                                                f'Используйте декоратор "{idempotent_saga.__name__}"'
                                                f' чтобы отметить функцию как сагу.')
-        # TODO: добавить имя саги к ключу
+        idempotent_key = self._join_key(idempotent_key, getattr(saga, SAGA_NAME_ATTR))
         worker = SagaWorker(idempotent_key, journal=self._worker_journal,
                             compensator=SagaCompensator(), sender=self._sender)
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done)
+
+    def run_incomplete(self) -> int:
+        """
+        Rerun all incomplete sagas. Returns the number of running sagas.
+        """
+        i = 0
+        for i, saga in enumerate(self._saga_journal.get_incomplete_saga(), 1):
+            idempotent_key, saga_name = self._split_key(saga.idempotent_key)
+            saga_f = self.get_saga(saga_name)
+            if saga_f is None:
+                # FIXME: warning, сагу переименовали, но было найдено старое имя в базе
+                pass
+            else:
+                model: Type[BaseModel] = list(saga_f.__annotations__.values())[1]
+                assert not isinstance(model, str), ('Используйте явную аннотацию типа данных саги '
+                                                    f'"{saga_f.__name__}", без '
+                                                    'оборачивания его в строку.')
+                self.new(
+                    idempotent_key, saga_f,
+                    model.model_validate_json(saga.initial_data.decode('utf8'))
+                ).run()
+        return i
+
+    @classmethod
+    def register_saga(cls, name: str, saga: Callable[[SagaWorker, M], Any]) -> None:
+        setattr(saga, SAGA_NAME_ATTR, name)
+        cls._sagas[name] = saga
+
+    @classmethod
+    def get_saga(cls, name: str) -> Optional[Callable[[SagaWorker, M], Any]]:
+        return cls._sagas.get(name)
+
+    @staticmethod
+    def _join_key(idempotent_key: str, saga_name: str) -> str:
+        clear_key = idempotent_key.replace(SAGA_KEY_SEPARATOR, '-')
+        clear_name = saga_name.replace(SAGA_KEY_SEPARATOR, '-')
+        return f'{clear_key}{SAGA_KEY_SEPARATOR}{clear_name}'
+
+    @staticmethod
+    def _split_key(joined_key: str) -> Tuple[str, str]:
+        key, name = joined_key.split(SAGA_KEY_SEPARATOR)
+        return key, name
 
 
 def idempotent_saga(name: str) \
         -> Callable[[Callable[[SagaWorker, M], T]], Callable[[SagaWorker, M], T]]:
     def decorator(f: Callable[[SagaWorker, M], T]) -> Callable[[SagaWorker, M], T]:
-        setattr(f, SAGA_NAME_ATTR, name)
+        SagaRunner.register_saga(name, f)
         return f
     return decorator
