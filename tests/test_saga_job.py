@@ -2,32 +2,24 @@ import random
 
 import pytest
 
-from saga.saga import idempotent_saga, SagaJob
+from saga.saga import SagaJob
 from saga.worker import SagaWorker
+from saga.models import Ok
 
 
-def str_return(worker: SagaWorker) -> str:
+def str_return(worker: SagaWorker, _) -> str:
     return '42'
 
 
-def float_return(worker: SagaWorker) -> float:
+def float_return(worker: SagaWorker, _) -> float:
     return 42.0
 
 
 def test_saga_job(worker):
-    def foo(_worker: SagaWorker) -> int:
+    def foo(_worker: SagaWorker, _) -> int:
         return 1
 
-    job = SagaJob(worker, foo)
-    assert isinstance(job, SagaJob)
-
-
-def test_decorator_return(worker):
-    @idempotent_saga
-    def foo(_worker: SagaWorker) -> int:
-        return 1
-
-    job = foo(worker)
+    job = SagaJob(worker, foo, Ok())
     assert isinstance(job, SagaJob)
 
 
@@ -37,7 +29,7 @@ def test_decorator_return(worker):
 ])
 def test_saga_job_run(worker, test_function, expected_result):
 
-    job = SagaJob(worker, test_function)
+    job = SagaJob(worker, test_function, Ok())
     job.run()
 
     result = job.wait()
@@ -45,16 +37,18 @@ def test_saga_job_run(worker, test_function, expected_result):
            result == expected_result, 'Результат выполнения саги возвращается некорректно.'
 
 
-def sum_return(worker: SagaWorker, x: int) -> int:
-    s = 0
-    for _ in range(x):
-        s += worker.job(random.randint, 0, 1000).run()
-    return s
+def test_saga_job_idempotent(journal, compensator):
+    def sum_return(worker: SagaWorker, _) -> int:
+        s = 0
+        for _ in range(10):
+            s += worker.job(random.randint, 0, 1000).run()
+        return s
 
+    wk1 = SagaWorker('1', journal, compensator, None)
+    wk2 = SagaWorker('1', journal, compensator, None)
 
-def test_saga_job_idempotent():
-    result1 = SagaJob(SagaWorker('1'), sum_return, 10).wait()
-    result2 = SagaJob(SagaWorker('1'), sum_return, 10).wait()
+    result1 = SagaJob(wk1, sum_return, Ok()).wait()
+    result2 = SagaJob(wk2, sum_return, Ok()).wait()
 
     assert result1 == result2, 'Запуск саг с одинаковыми ключами должен давать один результат.'
 
@@ -71,13 +65,13 @@ def test_saga_job_compensation(worker):
         nonlocal compensation_check
         compensation_check += _x
 
-    def function(_worker: SagaWorker) -> None:
+    def function(_worker: SagaWorker, _) -> None:
         for i in range(1, x+1):
             if i == x:
                 raise SomeError
             _worker.job(lambda: i).with_compensation(compensate).run()
 
-    job = SagaJob(worker, function)
+    job = SagaJob(worker, function, Ok())
 
     try:
         job.wait()
@@ -86,38 +80,3 @@ def test_saga_job_compensation(worker):
 
     assert compensation_check == (x**2/2 + x/2) - x, 'Все компенсационные функции должны быть ' \
                                                      'выполнены при исключении.'
-
-
-def test_saga_job_compensation_rerun():
-    x = 42
-    compensation_check = 0
-
-    class SomeError(Exception):
-        pass
-
-    def compensate(_x: int) -> None:
-        nonlocal compensation_check
-        compensation_check += _x
-
-    @idempotent_saga
-    def function(_worker: SagaWorker) -> None:
-        for i in range(10):
-            _worker.job(lambda: random.randint(1, 1000)) \
-                .with_compensation(compensate) \
-                .run()
-        raise SomeError()
-
-    try:
-        function(SagaWorker('1')).wait()
-    except SomeError:
-        pass
-    first_check = compensation_check
-
-    try:
-        function(SagaWorker('1')).wait()
-    except SomeError:
-        pass
-
-    assert compensation_check != first_check, ('Повторный запуск саги с исключением не должен '
-                                               'использовать данные из журнала, когда сага уже '
-                                               'была компенсирована.')

@@ -1,6 +1,5 @@
 import pytest
 
-from saga.compensator import SagaCompensator
 from saga.worker import SagaWorker, WorkerJob
 from saga.journal import MemoryJournal
 
@@ -14,9 +13,9 @@ def test_worker_job_create(worker):
     assert isinstance(job, WorkerJob)
 
 
-def test_worker_journal():
+def test_worker_journal(compensator):
     journal = MemoryJournal()
-    worker = SagaWorker('1', journal)
+    worker = SagaWorker('1', journal, compensator, None)
     worker.job(lambda: 1).run()
     assert journal.get_record('1_1') is not None
 
