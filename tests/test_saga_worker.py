@@ -1,7 +1,9 @@
 import pytest
 
-from saga.worker import SagaWorker, WorkerJob
+from saga.events import Event, EventSpec, SagaEvents
 from saga.journal import MemoryJournal
+from saga.models import Ok
+from saga.worker import SagaWorker, WorkerJob
 
 
 def run_in_worker(x: int) -> str:
@@ -71,3 +73,28 @@ def test_worker_loop_compensate(worker):
     worker.compensate()
 
     assert compensate_check == x**2/2 + x/2
+
+
+def test_worker_event_send(worker, communication_fk):
+
+    events = SagaEvents()
+    spec = EventSpec('', model_in=Ok, model_out=Ok)
+    event_delivered = False
+
+    @events.entry(spec)
+    def receiver(_: Ok) -> Ok:
+        nonlocal event_delivered
+        event_delivered = True
+        return Ok(ok=10)
+
+    def event() -> Event[Ok, Ok]:
+        return spec.make(Ok())
+
+    communication_fk.listener(events).run_in_thread()
+    result = worker.event(event).run()
+
+    assert event_delivered, 'Событий должно быть доставлено принимающей стороне.'
+    assert result.ok == 10
+
+
+
