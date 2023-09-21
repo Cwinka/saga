@@ -4,7 +4,7 @@ import redis
 from pydantic import BaseModel
 
 from saga import SagaRunner, SagaWorker
-from saga.events import RedisEventListener, RedisEventSender, SagaEvents
+from saga.events import RedisCommunicationFactory, SagaEvents
 from saga.models import Event, EventSpec, Ok
 
 
@@ -52,11 +52,11 @@ def saga_2(worker: SagaWorker, _: Ok) -> None:
 
 if __name__ == '__main__':
     rd = redis.Redis('localhost', 6379, decode_responses=True)
-    ls = RedisEventListener(rd, events)
-    sender = RedisEventSender(rd)
-    ls.run_in_thread()
 
-    runner = SagaRunner(sender=sender)
-    runner.new('1', saga_2, Ok()).run()
+    # fk = SocketCommunicationFactory('foo')
+    fk = RedisCommunicationFactory(rd)
+    fk.listener(events).run_in_thread()
 
-    # runner.run_incomplete() ?
+    runner = SagaRunner(sender=fk.sender())
+    runner.new('1', saga_2, Ok()).wait()
+
