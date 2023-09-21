@@ -141,8 +141,8 @@ class SagaWorker:
         )
 
     def _place_event_compensation(self, spec: JobSpec[..., Event[In, Ok]]) -> None:
-        self._compensate.add_compensate(JobSpec(self._memo.memoize(self._auto_send(spec.f)),
-                                                *spec.args, **spec.kwargs))
+        spec.f = self._memo.memoize(self._auto_send(spec.f))  # type: ignore[arg-type]
+        self._compensate.add_compensate(spec)
 
     def _place_compensation(self, spec: JobSpec[..., None]) -> None:
         spec.f = self._memo.memoize(spec.f)

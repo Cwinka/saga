@@ -57,14 +57,6 @@ class JobSpec(Generic[P, T]):
         self._args: List[Any] = []
         self._orig_kwargs = kwargs
 
-    @property
-    def args(self) -> tuple[Any, ...]:
-        return tuple([*self._args, *self._orig_args])
-
-    @property
-    def kwargs(self) -> P.kwargs:
-        return self._orig_kwargs
-
     def with_arg(self, arg: Any) -> 'JobSpec[P, T]':
         """
         Adds argument arg as the first positional argument of the main function.
@@ -80,7 +72,7 @@ class JobSpec(Generic[P, T]):
         Execute the main function. Can be called multiple times.
         :return: Result of the main function.
         """
-        return self.f(*self.args, **self.kwargs)
+        return self.f(*self._args, *self._orig_args, **self._orig_kwargs)
 
 
 class Ok(BaseModel):
