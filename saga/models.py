@@ -1,29 +1,33 @@
 import pickle
-
-from enum import Enum
-from typing import Optional
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+from typing import Any, Callable, Generic, List, Optional, ParamSpec, Type, TypeVar, Union
+
+from pydantic import BaseModel
+
+P = ParamSpec('P')
+T = TypeVar('T')
+In = TypeVar('In', bound=BaseModel)
+Out = TypeVar('Out', bound=BaseModel)
 
 
 class JobStatus(str, Enum):
     RUNNING = 'RUNNING'
-    """ Method running inside saga. """
-    COMPENSATED = 'COMPENSATED'
-    """ Compensation method has been executed inside saga. """
+    """ Method/saga is running. """
     DONE = 'DONE'
-    """ Method has been executed inside saga. """
+    """ Method/saga is executed with no errors. """
     FAILED = 'FAILED'
-    """ Method has encourage an exception during execution. """
+    """ Method/saga is executed with errors. """
 
 
 @dataclass
-class JobRecord:
-    idempotent_operation_id: str
-    """ A unique key op an operation inside saga. """
+class SagaRecord:
+    idempotent_key: str
+    """ A unique key of a saga. """
     status: JobStatus = JobStatus.RUNNING
     """ Current status of an operation. """
-    payload: bytes = pickle.dumps(None)
+    initial_data: bytes = pickle.dumps(None)
     """ Return content of an operation. """
     traceback: Optional[str] = None
     """ Traceback of an operation """
@@ -31,3 +35,106 @@ class JobRecord:
     """ Error message of an operation """
     failed_time: Optional[datetime] = None
     """ Error time when exception happened. """
+
+
+@dataclass
+class JobRecord:
+    idempotent_operation_id: str
+    """ A unique key of an operation inside saga. """
+    status: JobStatus = JobStatus.RUNNING
+    """ Current status of an operation. """
+    result: bytes = pickle.dumps(None)
+    """ Return content of an operation. """
+
+
+class JobSpec(Generic[P, T]):
+    """
+    Function specification. Used to create a specification of any function to run as needed.
+    """
+    def __init__(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
+        self.f = f
+        self._orig_args = args
+        self._args: List[Any] = []
+        self._orig_kwargs = kwargs
+
+    def with_arg(self, arg: Any) -> 'JobSpec[P, T]':
+        """
+        Adds argument arg as the first positional argument of the main function.
+        Use this method with care because there are no checks the main function can
+        accept arg argument.
+        :param arg: Any value to pass to the main function.
+        """
+        self._args.insert(0, arg)
+        return self
+
+    def call(self) -> T:
+        """
+        Execute the main function. Can be called multiple times.
+        :return: Result of the main function.
+        """
+        return self.f(*self._args, *self._orig_args, **self._orig_kwargs)
+
+
+class Ok(BaseModel):
+    """
+    Class is used to tell that is nothing to return or accept.
+    """
+    ok: int = 1
+
+
+class Event(Generic[In, Out]):
+    """
+    Event is an object that route event and holds its data and models.
+    """
+    def __init__(self, name: str, rt_name: str, data: In, model_in: Type[In],
+                 model_out: Type[Out]):
+        """
+        :param name: Event name.
+        :param rt_name: Returning event name.
+        :param data: Instance of input data.
+        :param model_in: Input model of event.
+        :param model_out: Output model of event.
+        """
+        self.name = name
+        self.data = data
+        self.model_in = model_in
+        self.model_out = model_out
+        self.ret_name = rt_name
+
+
+class EventSpec(Generic[In, Out]):
+    """
+    Event specification/factory object. It holds information about an event like its input and
+    output models.
+    Example of EventSpec:
+
+        spec = EventSpec('create_it', InputModel, OutputModel)
+
+    EventSpec can be used to create an Event with annotated models:
+
+        spec.make(InputModel())
+
+    EventSpec can be used with a SagaEvents like this:
+
+        events = SagaEvents()
+
+        @events.entry(spec)
+        def event(inp: InputModel) -> OutputModel:
+            ...
+    """
+    def __init__(self, name: str, model_in: Type[In], model_out: Type[Out]):
+        """
+        :param name: Event name.
+        :param model_in: Input model of event.
+        :param model_out: Output model of event.
+        """
+        self.name = name
+        self.model_in = model_in
+        self.model_out = model_out
+        self.ret_name = f'r_{name}'
+
+    def make(self, inp: In) -> Event[In, Out]:
+        """
+        Creates annotated Event with input data inp.
+        """
+        return Event(self.name, self.ret_name, inp, self.model_in, self.model_out)

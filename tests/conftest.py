@@ -1,33 +1,40 @@
-from typing import Dict, Optional
-
 import pytest
 
-from saga.models import JobRecord
-from saga.saga import WorkerJournal, SagaCompensate
-
-
-class MemoryWorkerJournal(WorkerJournal):
-    def __init__(self) -> None:
-        self._records: Dict[str, JobRecord] = {}
-
-    def get_record(self, idempotent_operation_id: str) -> Optional[JobRecord]:
-        return self._records.get(idempotent_operation_id)
-
-    def create_record(self, idempotent_operation_id: str) -> JobRecord:
-        self._records[idempotent_operation_id] = JobRecord(
-            idempotent_operation_id=idempotent_operation_id
-        )
-        return self._records[idempotent_operation_id]
-
-    def update_record(self, record: JobRecord) -> None:
-        self._records[record.idempotent_operation_id] = record
+from saga.compensator import SagaCompensator
+from saga.journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
+from saga.saga import SagaRunner
+from saga.worker import SagaWorker
+from saga.events import SocketCommunicationFactory, CommunicationFactory
 
 
 @pytest.fixture()
 def wk_journal() -> WorkerJournal:
-    return MemoryWorkerJournal()
+    return MemoryJournal()
 
 
 @pytest.fixture()
-def compensator() -> SagaCompensate:
-    return SagaCompensate()
+def saga_journal() -> SagaJournal:
+    return MemorySagaJournal()
+
+
+@pytest.fixture()
+def compensator() -> SagaCompensator:
+    return SagaCompensator()
+
+
+@pytest.fixture()
+def communication_fk(tmp_path) -> CommunicationFactory:
+    sock = tmp_path / 'sock'
+    sock.touch()
+    return SocketCommunicationFactory(sock.as_posix())
+
+
+@pytest.fixture()
+def worker(communication_fk, wk_journal, compensator) -> SagaWorker:
+    return SagaWorker('1', journal=wk_journal, compensator=compensator,
+                      sender=communication_fk.sender())
+
+
+@pytest.fixture()
+def runner(saga_journal, wk_journal) -> SagaRunner:
+    return SagaRunner(saga_journal, wk_journal)
