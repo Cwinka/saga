@@ -56,7 +56,7 @@ class SagaJob(Generic[T]):
         """
         if self._result is None:
             self._result = self._pool.apply_async(self._f_with_compensation,
-                                                  args=(self._worker, forget_on_complete,
+                                                  args=(forget_on_complete, self._worker,
                                                         self._data),)
 
     def wait(self, timeout: Optional[float] = None, forget_on_complete: bool = False) -> T:
