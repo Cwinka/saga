@@ -27,7 +27,7 @@ def test_update():
     dct = {}
     journal = MemoryJournal(dct)
 
-    record.payload = b'42'
+    record.result = b'42'
     journal.update_record(record)
     assert dct[key] is record
 

@@ -93,15 +93,16 @@ class SagaJob(Generic[T]):
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
             try:
+                self._record.status = JobStatus.DONE
                 return f(*args, **kwargs)
             except Exception as e:
-                self._record.failed_time = datetime.datetime.now()
-                self._record.error = str(e)
-                self._record.traceback = traceback.format_exc()
+                self._record.status = JobStatus.FAILED
+                # self._record.failed_time = datetime.datetime.now()
+                # self._record.error = str(e)
+                # self._record.traceback = traceback.format_exc()
                 self._worker.compensate()
                 raise
             finally:
-                self._record.status = JobStatus.DONE
                 self._worker.journal.update_record(self._record)
                 if self._forget_done:
                     self._worker.journal.delete_records(self._record)

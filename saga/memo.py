@@ -1,11 +1,9 @@
-import datetime
 import functools
 import pickle
-import traceback
-from typing import Callable, ParamSpec, TypeVar, List
+from typing import Callable, List, ParamSpec, TypeVar
 
 from saga.journal import WorkerJournal
-from saga.models import JobStatus, JobRecord
+from saga.models import JobRecord, JobStatus
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -37,17 +35,14 @@ class Memoized:
             # FIXME: также нужно запомнить аргументы вызова, чтобы при запуске с другими
             #  аргументами возвращался новый результат.
             if record.status == JobStatus.DONE:
-                return pickle.loads(record.payload)  # type: ignore[no-any-return]
+                return pickle.loads(record.result)  # type: ignore[no-any-return]
             try:
                 r = f(*args, **kwargs)
-            except Exception as e:
+            except Exception:
                 record.status = JobStatus.FAILED
-                record.traceback = traceback.format_exc()
-                record.failed_time = record.failed_time or datetime.datetime.now()
-                record.error = str(e)
                 self._journal.update_record(record)
                 raise
-            record.payload = pickle.dumps(r)
+            record.result = pickle.dumps(r)
             record.status = JobStatus.DONE
             self._journal.update_record(record)
             return r
