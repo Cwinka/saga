@@ -37,7 +37,14 @@ def test_saga_job_run(saga_journal, worker, test_function, expected_result):
            result == expected_result, 'Результат выполнения саги возвращается некорректно.'
 
 
-def test_saga_job_idempotent(saga_journal, wk_journal, compensator):
+@pytest.mark.parametrize('forget_done, assert_f, msg', [
+    (False, lambda x, y: x == y,
+     'Запуск саг с одинаковыми ключами должен давать один результат.'),
+    (True, lambda x, y: x != y,
+     'Запуск саг с одинаковыми ключами, но с очисткой журнала после выполнения должен давать '
+     'разный результат.')
+])
+def test_saga_job_idempotent(saga_journal, wk_journal, compensator, forget_done, assert_f, msg):
     def sum_return(worker: SagaWorker, _) -> int:
         s = 0
         for _ in range(10):
@@ -47,10 +54,10 @@ def test_saga_job_idempotent(saga_journal, wk_journal, compensator):
     wk1 = SagaWorker('1', wk_journal, compensator, None)
     wk2 = SagaWorker('1', wk_journal, compensator, None)
 
-    result1 = SagaJob(saga_journal, wk1, sum_return, Ok()).wait()
+    result1 = SagaJob(saga_journal, wk1, sum_return, Ok(), forget_done=forget_done).wait()
     result2 = SagaJob(saga_journal, wk2, sum_return, Ok()).wait()
 
-    assert result1 == result2, 'Запуск саг с одинаковыми ключами должен давать один результат.'
+    assert assert_f(result1, result2), msg
 
 
 def test_saga_job_compensation(worker, saga_journal):
