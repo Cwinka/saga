@@ -43,32 +43,38 @@ class SagaJob(Generic[T]):
 
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
 
-    def __init__(self, worker: SagaWorker, f: Callable[[SagaWorker, M], T], data: M):
+    def __init__(self, worker: SagaWorker, saga: Callable[[SagaWorker, M], T], data: M,
+                 forget_done: bool = False) -> None:
+        """
+        :param worker: Обработчик функций саги.
+        :param saga: Функция саги.
+        :param data: Входные данные саги, если данных нет, используется Ok.
+        :param forget_done: If True when saga completes it purge all saved journal records
+                           and can be run with same idempotent key.
+        """
         self._worker = worker
         self._record = self._get_initial_record(worker)
-        self._f_with_compensation = self._compensate_on_exception(f)
+        self._f_with_compensation = self._compensate_on_exception(saga)
+        self._forget_done = forget_done
         self._data = data
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
 
-    def run(self, forget_on_complete: bool = False) -> None:
+    def run(self) -> None:
         """
         Run a main function. Non-blocking.
         """
         if self._result is None:
             self._result = self._pool.apply_async(self._f_with_compensation,
-                                                  args=(forget_on_complete, self._worker,
-                                                        self._data),)
+                                                  args=(self._worker, self._data))
 
-    def wait(self, timeout: Optional[float] = None, forget_on_complete: bool = False) -> T:
+    def wait(self, timeout: Optional[float] = None) -> T:
         """
         Wait for a main function is executed. Automatically implies run.
         :param timeout: Time in seconds to wait for execution is done.
-        :param forget_on_complete: If True when saga completes it purge all saved journal records
-                                   and can be run with same idempotent key.
         :return: Result of a main function.
         """
         if self._result is None:
-            self.run(forget_on_complete)
+            self.run()
         assert self._result is not None
         return self._result.get(timeout)
 
@@ -85,7 +91,7 @@ class SagaJob(Generic[T]):
         inside f and then reraise an exception.
         """
         @functools.wraps(f)
-        def wrap(forget: bool, *args: P.args, **kwargs: P.kwargs) -> T:
+        def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
             try:
                 return f(*args, **kwargs)
             except Exception as e:
@@ -97,7 +103,7 @@ class SagaJob(Generic[T]):
             finally:
                 self._record.status = JobStatus.DONE
                 self._worker.journal.update_record(self._record)
-                if forget:
+                if self._forget_done:
                     self._worker.journal.delete_records(self._record)
                     self._worker.forget_done()
         return wrap  # type: ignore[return-value]
@@ -106,7 +112,9 @@ class SagaJob(Generic[T]):
 class SagaRunner:
 
     def __init__(self, journal: Optional[WorkerJournal] = None,
-                 sender: Optional[EventSender] = None):
+                 sender: Optional[EventSender] = None,
+                 forget_done: bool = False):
+        self._forget_done = forget_done
         self._sender = sender
         self._journal = journal or MemoryJournal()
 
@@ -115,4 +123,4 @@ class SagaRunner:
         # TODO: добавить имя саги к ключу
         worker = SagaWorker(idempotent_key, journal=self._journal,
                             compensator=SagaCompensator(), sender=self._sender)
-        return SagaJob(worker, saga, data)
+        return SagaJob(worker, saga, data, forget_done=self._forget_done)
