@@ -114,10 +114,6 @@ class SagaWorker:
     def idempotent_key(self) -> str:
         return self._idempotent_key
 
-    @property
-    def journal(self) -> WorkerJournal:
-        return self._journal
-
     def compensate(self) -> None:
         self._compensate.run()
 
