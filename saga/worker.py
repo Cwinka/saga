@@ -5,7 +5,7 @@ from saga.compensator import SagaCompensator
 from saga.events import EventSender
 from saga.journal import WorkerJournal
 from saga.memo import Memoized
-from saga.models import Event, In, JobSpec, Ok, Out
+from saga.models import Event, In, JobSpec, NotAnEvent, Ok, Out
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -120,6 +120,7 @@ class SagaWorker:
         self._idempotent_key = idempotent_key
         self._journal = journal
         self._compensate = compensator or SagaCompensator()
+        self._no_event_comp: bool = False
 
     @property
     def idempotent_key(self) -> str:
@@ -167,6 +168,9 @@ class SagaWorker:
         )
 
     def _place_event_compensation(self, spec: JobSpec[..., Event[In, Ok]]) -> None:
+        if self._no_event_comp:
+            self._no_event_comp = False
+            return
         spec.f = self._memo.memoize(self._auto_send(spec.f))  # type: ignore[arg-type]
         self._compensate.add_compensate(spec)
 
@@ -175,11 +179,13 @@ class SagaWorker:
         self._compensate.add_compensate(spec)
 
     def _auto_send(self, f: Callable[P, Event[Any, Out]]) -> Callable[P, Out]:
-
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> Out:
             assert self._sender is not None, 'Не установлен отправитель событий.'
             event = f(*args, **kwargs)
+            if isinstance(event, NotAnEvent):
+                self._no_event_comp = True
+                return Ok()  # type: ignore[return-value]
             event.ret_name = f'{self._idempotent_key}_{event.ret_name}'
             self._sender.send(event)
             return self._sender.wait(event)
