@@ -2,7 +2,7 @@ import pytest
 
 from saga.events import Event, EventSpec, SagaEvents
 from saga.journal import MemoryJournal
-from saga.models import Ok
+from saga.models import NotAnEvent, Ok
 from saga.worker import SagaWorker, WorkerJob
 
 
@@ -97,4 +97,20 @@ def test_worker_event_send(worker, communication_fk):
     assert result.ok == 10
 
 
+def test_worker_not_an_event_send(worker):
+    result = worker.event(lambda: NotAnEvent()).run()
+    assert isinstance(result, Ok), 'Событие NotAnEvent должно возвращать Ok.'
 
+
+def test_worker_not_an_event_comp(worker):
+    compensation_run = False
+
+    def comp(_: Ok) -> NotAnEvent:
+        nonlocal compensation_run
+        compensation_run = True
+        return NotAnEvent()
+
+    worker.event(lambda: NotAnEvent()).with_compensation(comp).run()
+    worker.compensate()
+
+    assert not compensation_run, 'Компенсационная функция для NotAnEvent не должна запускаться.'
