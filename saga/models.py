@@ -138,3 +138,23 @@ class EventSpec(Generic[In, Out]):
         Creates annotated Event with input data inp.
         """
         return Event(self.name, self.ret_name, inp, self.model_in, self.model_out)
+
+
+class NotAnEvent(Event[Ok, Ok]):
+    """
+    Represents absent event, so it won't be sent by `SagaWorker`.
+    This event should be used in the `event` function of `SagaWorker`:
+
+        @idempotent_saga(...)
+        def saga(worker: SagaWorker)
+            result = worker.event(check_something, random.randint(0, 20)).run()
+            # result in case of `NotAnEvent` will be `Ok`.
+
+        def check_something(value: int)
+            if value > 10:
+                return NotAnEvent()
+            return Event(...)
+    """
+    def __init__(self) -> None:
+        super().__init__('not_an_event', 'r_not_an_event', data=Ok(),
+                         model_in=Ok, model_out=Ok)
