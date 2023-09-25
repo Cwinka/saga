@@ -132,7 +132,6 @@ class SocketEventSender(EventSender):
 class SocketEventListener(EventListener):
     def __init__(self, file: str, *events: SagaEvents):
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        os.unlink(file)
         sock.bind(file)
         self._sock = sock
         self._map = self.events_map(*events)
