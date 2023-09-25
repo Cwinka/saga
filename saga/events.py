@@ -144,14 +144,14 @@ class SocketEventListener(EventListener):
         while True:
             conn, _ = self._sock.accept()
             self._handle(conn)
+            conn.close()
 
     def _handle(self, conn: socket.socket) -> None:
-        while True:
-            data = conn.recv(1024)
-            json_data = json.loads(data)
-            model_in, _, handler = self._map[json_data['event']]
-            ret = handler(model_in.model_validate_json(json_data['model']))
-            conn.send(ret.model_dump_json().encode('utf8'))
+        data = conn.recv(1024)
+        json_data = json.loads(data)
+        model_in, _, handler = self._map[json_data['event']]
+        ret = handler(model_in.model_validate_json(json_data['model']))
+        conn.send(ret.model_dump_json().encode('utf8'))
 
 
 class RedisEventSender(EventSender):
