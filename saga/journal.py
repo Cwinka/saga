@@ -1,3 +1,4 @@
+import threading
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 
@@ -75,46 +76,58 @@ class WorkerJournal(ABC):
 
 class MemorySagaJournal(SagaJournal):
 
+    _lock = threading.Lock()
+
     def __init__(self, sagas: Optional[Dict[str, SagaRecord]] = None) -> None:
         self._sagas: Dict[str, SagaRecord] = sagas if sagas is not None else {}
 
     def get_saga(self, idempotent_key: str) -> Optional[SagaRecord]:
-        return self._sagas.get(idempotent_key)
+        with self._lock:
+            return self._sagas.get(idempotent_key)
 
     def create_saga(self, idempotent_key: str) -> SagaRecord:
-        self._sagas[idempotent_key] = SagaRecord(
-            idempotent_key=idempotent_key
-        )
-        return self._sagas[idempotent_key]
+        with self._lock:
+            self._sagas[idempotent_key] = SagaRecord(
+                idempotent_key=idempotent_key
+            )
+            return self._sagas[idempotent_key]
 
     def update_saga(self, saga: SagaRecord) -> None:
-        self._sagas[saga.idempotent_key] = saga
+        with self._lock:
+            self._sagas[saga.idempotent_key] = saga
 
     def delete_sagas(self, *idempotent_keys: str) -> None:
-        for key in idempotent_keys:
-            del self._sagas[key]
+        with self._lock:
+            for key in idempotent_keys:
+                del self._sagas[key]
 
     def get_incomplete_saga(self) -> List[SagaRecord]:
-        return [x for x in self._sagas.values() if x.status == JobStatus.RUNNING]
+        with self._lock:
+            return [x for x in self._sagas.values() if x.status == JobStatus.RUNNING]
 
 
 class MemoryJournal(WorkerJournal):
-    def __init__(self, records: Optional[Dict[str, JobRecord]] = None,
-                 sagas: Optional[Dict[str, SagaRecord]] = None) -> None:
+    _lock = threading.Lock()
+
+    def __init__(self, records: Optional[Dict[str, JobRecord]] = None) -> None:
         self._records: Dict[str, JobRecord] = records if records is not None else {}
 
     def get_record(self, idempotent_operation_id: str) -> Optional[JobRecord]:
-        return self._records.get(idempotent_operation_id)
+        with self._lock:
+            return self._records.get(idempotent_operation_id)
 
     def create_record(self, idempotent_operation_id: str) -> JobRecord:
-        self._records[idempotent_operation_id] = JobRecord(
-            idempotent_operation_id=idempotent_operation_id
-        )
-        return self._records[idempotent_operation_id]
+        with self._lock:
+            self._records[idempotent_operation_id] = JobRecord(
+                idempotent_operation_id=idempotent_operation_id
+            )
+            return self._records[idempotent_operation_id]
 
     def update_record(self, record: JobRecord) -> None:
-        self._records[record.idempotent_operation_id] = record
+        with self._lock:
+            self._records[record.idempotent_operation_id] = record
 
     def delete_records(self, *records: JobRecord) -> None:
-        for r in records:
-            del self._records[r.idempotent_operation_id]
+        with self._lock:
+            for r in records:
+                del self._records[r.idempotent_operation_id]
