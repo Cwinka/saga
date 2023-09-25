@@ -2,7 +2,7 @@ import pickle
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Generic, List, Optional, ParamSpec, Type, TypeVar, Union
+from typing import Any, Callable, Generic, List, Optional, ParamSpec, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -21,8 +21,7 @@ class JobStatus(str, Enum):
     """ Method/saga is executed with errors. """
 
 
-@dataclass
-class SagaRecord:
+class SagaRecord(BaseModel):
     idempotent_key: str
     """ A unique key of a saga. """
     status: JobStatus = JobStatus.RUNNING
@@ -37,8 +36,7 @@ class SagaRecord:
     """ Error time when exception happened. """
 
 
-@dataclass
-class JobRecord:
+class JobRecord(BaseModel):
     idempotent_operation_id: str
     """ A unique key of an operation inside saga. """
     status: JobStatus = JobStatus.RUNNING

@@ -3,7 +3,7 @@ from saga.models import JobRecord
 
 
 def test_get():
-    record = JobRecord('1')
+    record = JobRecord(idempotent_operation_id='1')
     dct = {'1': record}
     journal = MemoryJournal(dct)
     get_record = journal.get_record('1')
@@ -23,7 +23,7 @@ def test_create():
 
 def test_update():
     key = '1'
-    record = JobRecord(key)
+    record = JobRecord(idempotent_operation_id=key)
     dct = {}
     journal = MemoryJournal(dct)
 
@@ -34,7 +34,7 @@ def test_update():
 
 def test_delete():
     key = '1'
-    record = JobRecord(key)
+    record = JobRecord(idempotent_operation_id=key)
     dct = {record.idempotent_operation_id: record}
     journal = MemoryJournal(dct)
     journal.delete_records(record)
