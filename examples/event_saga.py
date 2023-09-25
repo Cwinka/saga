@@ -54,8 +54,8 @@ if __name__ == '__main__':
     rd = redis.Redis('localhost', 6379, decode_responses=True)
 
     # fk = SocketCommunicationFactory('foo')
-    fk = RedisCommunicationFactory(rd)
-    fk.listener(events).run_in_thread()
+    cfk = RedisCommunicationFactory(rd)
+    cfk.listener(events).run_in_thread()
 
-    runner = SagaRunner(sender=fk.sender())
+    runner = SagaRunner(cfk=cfk)
     runner.new('1', saga_2, Ok()).wait()

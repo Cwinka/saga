@@ -9,7 +9,7 @@ from typing import Any, Concatenate, Dict, Generic, Optional, ParamSpec, Tuple, 
 from pydantic import BaseModel
 
 from saga.compensator import SagaCompensator
-from saga.events import EventSender
+from saga.events import CommunicationFactory
 from saga.journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
 from saga.models import JobStatus, SagaRecord
 from saga.worker import SagaWorker
@@ -169,10 +169,10 @@ class SagaRunner:
     def __init__(self,
                  saga_journal: Optional[SagaJournal] = None,
                  worker_journal: Optional[WorkerJournal] = None,
-                 sender: Optional[EventSender] = None,
+                 cfk: Optional[CommunicationFactory] = None,
                  forget_done: bool = False):
         self._forget_done = forget_done
-        self._sender = sender
+        self._cfk = cfk
         self._worker_journal = worker_journal or MemoryJournal()
         self._saga_journal = saga_journal or MemorySagaJournal()
 
@@ -190,7 +190,8 @@ class SagaRunner:
                                                f' чтобы отметить функцию как сагу.')
         idempotent_key = self.join_key(idempotent_key, getattr(saga, SAGA_NAME_ATTR))
         worker = SagaWorker(idempotent_key, journal=self._worker_journal,
-                            compensator=SagaCompensator(), sender=self._sender)
+                            compensator=SagaCompensator(),
+                            sender=self._cfk.sender() if self._cfk is not None else None)
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done)
 
     def run_incomplete(self) -> int:
