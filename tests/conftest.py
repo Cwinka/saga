@@ -25,7 +25,6 @@ def compensator() -> SagaCompensator:
 @pytest.fixture()
 def communication_fk(tmp_path) -> CommunicationFactory:
     sock = tmp_path / 'sock'
-    sock.touch()
     return SocketCommunicationFactory(sock.as_posix())
 
 
