@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from saga.events import Event, EventSpec, SagaEvents
@@ -91,6 +93,7 @@ def test_worker_event_send(worker, communication_fk):
         return spec.make(Ok())
 
     communication_fk.listener(events).run_in_thread()
+    time.sleep(0.05)  # wait socket to wake up
     result = worker.event(event).run()
 
     assert event_delivered, 'Событий должно быть доставлено принимающей стороне.'
