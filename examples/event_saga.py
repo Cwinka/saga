@@ -17,7 +17,7 @@ class Foo(BaseModel):
 
 
 Ev = EventSpec('bob',  model_in=Foo, model_out=Boo)
-RollEv = EventSpec('roll_bob', model_in=Boo, model_out=Ok)
+RollEv = EventSpec('roll_bob', model_in=Foo, model_out=Ok)
 ##
 
 # remote part
@@ -30,7 +30,7 @@ def ev(data1: Foo) -> Boo:
 
 
 @events.entry(RollEv)
-def roll_ev(x: Boo) -> Ok:
+def roll_ev(x: Foo) -> Ok:
     return Ok()
 ##
 
@@ -40,8 +40,8 @@ def event() -> Event[Foo, Boo]:
     return Ev.make(Foo(foo='12'))
 
 
-def roll_event(x: Boo) -> Event[Boo, Ok]:
-    return RollEv.make(x)
+def roll_event(x: Boo) -> Event[Foo, Ok]:
+    return RollEv.make(Foo(foo=str(x.boo)))
 
 
 @idempotent_saga('saga')

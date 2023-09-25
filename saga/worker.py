@@ -154,7 +154,7 @@ class SagaWorker:
         )
 
     def event(self, f: Callable[P, Event[In, Out]], *args: P.args,
-              **kwargs: P.kwargs) -> WorkerJob[Out, Event[Out, Any]]:
+              **kwargs: P.kwargs) -> WorkerJob[Out, Event[Any, Any]]:
         """
         Creates a WorkerJob that sends returning event and waits it to come back.
         :param f: A function that returns an event.
@@ -162,7 +162,7 @@ class SagaWorker:
         :param kwargs: Any keyword arguments to pass in f function.
         """
         assert self._sender is not None, 'Не установлен отправитель событий.'
-        return WorkerJob[Out, Event[Out, Any]](
+        return WorkerJob[Out, Event[Any, Any]](
             JobSpec(self._memo.memoize(self._auto_send(f)), *args, **kwargs),
             comp_set_callback=self._place_event_compensation
         )
