@@ -1,4 +1,5 @@
 import random
+import uuid
 
 import redis
 from pydantic import BaseModel
@@ -58,4 +59,4 @@ if __name__ == '__main__':
     cfk.listener(events).run_in_thread()
 
     runner = SagaRunner(cfk=cfk)
-    runner.new('1', saga_2, Ok()).wait()
+    runner.new(uuid.uuid4(), saga_2, Ok()).wait()

@@ -1,6 +1,8 @@
+import uuid
+
 import pytest
 
-from saga.models import Ok, JobStatus
+from saga.models import JobStatus, Ok
 from saga.saga import SagaJob, SagaRunner, idempotent_saga
 from saga.worker import SagaWorker
 
@@ -23,23 +25,23 @@ def test_register_saga(runner):
 
 
 def test_saga_runner_new(runner):
-    job = runner.new('1', foo, Ok())
+    job = runner.new(uuid.uuid4(), foo, Ok())
     assert isinstance(job, SagaJob)
 
 
 def test_saga_runner_wrong_saga(runner):
     with pytest.raises(AssertionError):
-        runner.new('1', lambda x, y: 1, Ok())
+        runner.new(uuid.uuid4(), lambda x, y: 1, Ok())
 
 
 def test_saga_runner_rerun_0(runner):
-    runner.new('1', foo, Ok()).wait()
+    runner.new(uuid.uuid4(), foo, Ok()).wait()
 
     assert runner.run_incomplete() == 0, 'Завершенные саги не должны быть запущены.'
 
 
 def test_saga_runner_rerun_1(saga_journal):
-    saga = saga_journal.create_saga(SagaRunner.join_key('1', 'foo'))
+    saga = saga_journal.create_saga(SagaRunner.join_key(uuid.uuid4(), 'foo'))
     saga.initial_data = Ok().model_dump_json().encode('utf8')
     saga.status = JobStatus.RUNNING
     saga_journal.update_saga(saga)
@@ -59,7 +61,7 @@ def test_saga_runner_rerun_exc(runner):
         raise Err
 
     try:
-        runner.new('1', boo, Ok()).wait()
+        runner.new(uuid.uuid4(), boo, Ok()).wait()
     except Err:
         pass
 

@@ -5,6 +5,7 @@ import os
 import traceback
 from collections.abc import Callable
 from typing import Any, Concatenate, Dict, Generic, Optional, ParamSpec, Tuple, Type, TypeVar
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -176,7 +177,7 @@ class SagaRunner:
         self._worker_journal = worker_journal or MemoryJournal()
         self._saga_journal = saga_journal or MemorySagaJournal()
 
-    def new(self, idempotent_key: str, saga: Callable[[SagaWorker, M], T], data: M) -> (
+    def new(self, idempotent_key: UUID, saga: Callable[[SagaWorker, M], T], data: M) -> (
             SagaJob)[T]:
         """
         Creates new SagaJob object to run saga.
@@ -188,8 +189,8 @@ class SagaRunner:
         assert hasattr(saga, SAGA_NAME_ATTR), (f'Функция "{saga.__name__}" не является сагой. '
                                                f'Используйте декоратор "{idempotent_saga.__name__}"'
                                                f' чтобы отметить функцию как сагу.')
-        idempotent_key = self.join_key(idempotent_key, getattr(saga, SAGA_NAME_ATTR))
-        worker = SagaWorker(idempotent_key, journal=self._worker_journal,
+        key = self.join_key(idempotent_key, getattr(saga, SAGA_NAME_ATTR))
+        worker = SagaWorker(key, journal=self._worker_journal,
                             compensator=SagaCompensator(),
                             sender=self._cfk.sender() if self._cfk is not None else None)
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done)
@@ -211,7 +212,7 @@ class SagaRunner:
                                                     f'"{saga_f.__name__}", без '
                                                     'оборачивания его в строку.')
                 self.new(
-                    idempotent_key, saga_f,
+                    UUID(idempotent_key), saga_f,
                     model.model_validate_json(saga.initial_data.decode('utf8'))
                 ).run()
         return i
@@ -232,18 +233,16 @@ class SagaRunner:
         return cls._sagas.get(name)
 
     @staticmethod
-    def join_key(idempotent_key: str, saga_name: str) -> str:
+    def join_key(idempotent_key: UUID, saga_name: str) -> str:
         """
         Returns a string that can be used to retrieve SagaRecord object from SagaJournal.
         """
-        clear_key = idempotent_key.replace(SAGA_KEY_SEPARATOR, '-')
-        clear_name = saga_name.replace(SAGA_KEY_SEPARATOR, '-')
-        return f'{clear_key}{SAGA_KEY_SEPARATOR}{clear_name}'
+        return f'{idempotent_key}{SAGA_KEY_SEPARATOR}{saga_name}'
 
     @staticmethod
     def _split_key(joined_key: str) -> Tuple[str, str]:
-        key, name = joined_key.split(SAGA_KEY_SEPARATOR)
-        return key, name
+        key, *name = joined_key.split(SAGA_KEY_SEPARATOR)
+        return key, ''.join(name)
 
 
 def idempotent_saga(name: str) \
