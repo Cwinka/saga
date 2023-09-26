@@ -231,7 +231,8 @@ class SagaRunner:
                                                     f'"{saga_f.__name__}", без '
                                                     'оборачивания его в строку.')
                 self.new(
-                    UUID(idempotent_key), saga_f, self._model_from_b(model, saga.initial_data)
+                    UUID(idempotent_key), saga_f,
+                    self._model_from_b(model, saga.initial_data)  # type: ignore[arg-type]
                 ).run()
         return i
 
