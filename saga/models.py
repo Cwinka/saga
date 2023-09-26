@@ -51,18 +51,6 @@ class JobRecord(BaseModel):
     result: bytes = base64.b64encode(pickle.dumps(None))
     """ Return content of an operation. """
 
-    def set_result(self, r: Any) -> None:
-        """
-        Устанавливает результат в запись.
-        """
-        self.result = base64.b64encode(pickle.dumps(r))
-
-    def get_result(self) -> Any:
-        """
-        Возвращает результат из записи. Если результат не был установлен, возвращается None.
-        """
-        return pickle.loads(base64.b64decode(self.result))
-
 
 class JobSpec(Generic[P, T]):
     """

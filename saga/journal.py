@@ -67,9 +67,15 @@ class WorkerJournal(ABC):
         """
 
     @abstractmethod
-    def update_record(self, record: JobRecord) -> None:
+    def update_record(self, idempotent_operation_id: str, fields: List[str],
+                      values: List[Any]) -> None:
         """
-        Updates job record.
+        Обновить запись `JobRecord` с уникальным ключом idempotent_operation_id.
+
+        :param idempotent_operation_id: Уникальный ключ записи `JobRecord`.
+        :param fields: Поля, которые необходимо обновить.
+        :param values: Значения обновляемых полей. Значения гарантированно того же типа, что и
+                       поле.
         """
 
     @abstractmethod
@@ -130,9 +136,12 @@ class MemoryJournal(WorkerJournal):
             )
             return self._records[idempotent_operation_id]
 
-    def update_record(self, record: JobRecord) -> None:
+    def update_record(self, idempotent_operation_id: str, fields: List[str],
+                      values: List[Any]) -> None:
         with self._lock:
-            self._records[record.idempotent_operation_id] = record
+            record = self._records[idempotent_operation_id]
+            for field, value in zip(fields, values):
+                setattr(record, field, value)
 
     def delete_records(self, *records: JobRecord) -> None:
         with self._lock:

@@ -1,5 +1,5 @@
 from saga.journal import MemoryJournal
-from saga.models import JobRecord
+from saga.models import JobRecord, JobStatus
 
 
 def test_get():
@@ -24,12 +24,11 @@ def test_create():
 def test_update():
     key = '1'
     record = JobRecord(idempotent_operation_id=key)
-    dct = {}
+    record.status = JobStatus.FAILED
+    dct = {key: record}
     journal = MemoryJournal(dct)
-
-    record.set_result(42)
-    journal.update_record(record)
-    assert dct[key] is record
+    journal.update_record(key, ['status'], [JobStatus.DONE])
+    assert dct[key].status == JobStatus.DONE
 
 
 def test_delete():
