@@ -25,9 +25,14 @@ class SagaJournal(ABC):
         """
 
     @abstractmethod
-    def update_saga(self, saga: SagaRecord) -> None:
+    def update_saga(self, idempotent_key: str, fields: List[str], values: List[Any]) -> None:
         """
-        Updates saga record.
+        Обновить запись `SagaRecord` с уникальным ключом idempotent_key.
+
+        :param idempotent_key: Уникальный ключ записи `SagaRecord`.
+        :param fields: Поля, которые необходимо обновить.
+        :param values: Значения обновляемых полей. Значения гарантированно того же типа, что и
+                       поле.
         """
 
     @abstractmethod
@@ -92,9 +97,11 @@ class MemorySagaJournal(SagaJournal):
             )
             return self._sagas[idempotent_key]
 
-    def update_saga(self, saga: SagaRecord) -> None:
+    def update_saga(self, idempotent_key: str, fields: List[str], values: List[Any]) -> None:
         with self._lock:
-            self._sagas[saga.idempotent_key] = saga
+            saga = self._sagas[idempotent_key]
+            for field, value in zip(fields, values):
+                setattr(saga, field, value)
 
     def delete_sagas(self, *idempotent_keys: str) -> None:
         with self._lock:

@@ -41,10 +41,9 @@ def test_saga_runner_rerun_0(runner):
 
 
 def test_saga_runner_rerun_1(saga_journal):
-    saga = saga_journal.create_saga(SagaRunner.join_key(uuid.uuid4(), 'foo'))
-    saga.set_initial_data(Ok())
-    saga.status = JobStatus.RUNNING
-    saga_journal.update_saga(saga)
+    id_key = SagaRunner.join_key(uuid.uuid4(), 'foo')
+    saga_journal.create_saga(id_key)
+    saga_journal.update_saga(id_key, ['status'], [JobStatus.RUNNING])
 
     runner = SagaRunner(saga_journal)
 

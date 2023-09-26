@@ -1,10 +1,11 @@
+import base64
 import datetime
 import functools
 import multiprocessing.pool
 import os
 import traceback
 from collections.abc import Callable
-from typing import Any, Concatenate, Dict, Generic, Optional, ParamSpec, Tuple, Type, TypeVar
+from typing import Any, Concatenate, Dict, Generic, List, Optional, ParamSpec, Tuple, Type, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -20,6 +21,20 @@ T = TypeVar('T')
 M = TypeVar('M', bound=BaseModel)
 SAGA_NAME_ATTR = '__saga_name__'
 SAGA_KEY_SEPARATOR = '&'
+
+
+def model_to_initial_data(data: BaseModel) -> bytes:
+    """
+    Конвертировать модель в ascii байты.
+    """
+    return base64.b64encode(data.model_dump_json().encode('utf8'))
+
+
+def model_from_initial_data(model: Type[M], data: bytes) -> M:
+    """
+    Привести ascii байты data в модель model.
+    """
+    return model.model_validate_json(base64.b64decode(data).decode('utf8'))
 
 
 class SagaJob(Generic[T]):
@@ -48,7 +63,8 @@ class SagaJob(Generic[T]):
 
     def __init__(self, journal: SagaJournal, worker: SagaWorker,
                  saga: Callable[[SagaWorker, M], T], data: M,
-                 forget_done: bool = False) -> None:
+                 forget_done: bool = False,
+                 model_to_b: Callable[[M], bytes] = model_to_initial_data) -> None:
         """
         :param journal: Журнал саги.
         :param worker: Обработчик функций саги.
@@ -62,6 +78,7 @@ class SagaJob(Generic[T]):
         self._f_with_compensation = self._compensate_on_exception(saga)
         self._forget_done = forget_done
         self._data = data
+        self._model_to_b = model_to_b
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
 
     def run(self) -> None:
@@ -70,8 +87,8 @@ class SagaJob(Generic[T]):
         """
         if self._result is None:
             saga = self._get_saga()
-            saga.set_initial_data(self._data)
-            self._journal.update_saga(saga)
+            self._journal.update_saga(saga.idempotent_key, ['initial_data'],
+                                      [self._model_to_b(self._data)])
             self._result = self._pool.apply_async(self._f_with_compensation,
                                                   args=(self._worker, self._data))
 
@@ -100,18 +117,20 @@ class SagaJob(Generic[T]):
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
             saga = self._get_saga()
+            fields: List[str] = []
+            values: List[Any] = []
             try:
-                saga.status = JobStatus.DONE
+                fields.append('status')
+                values.append(JobStatus.DONE)
                 return f(*args, **kwargs)
             except Exception as e:
-                saga.status = JobStatus.FAILED
-                saga.failed_time = datetime.datetime.now()
-                saga.error = str(e)
-                saga.traceback = traceback.format_exc()
+                fields.extend(['status', 'failed_time', 'error', 'traceback'])
+                values.extend([JobStatus.FAILED, datetime.datetime.now(), str(e),
+                               traceback.format_exc()])
                 self._worker.compensate()
                 raise
             finally:
-                self._journal.update_saga(saga)
+                self._journal.update_saga(saga.idempotent_key, fields, values)
                 if self._forget_done:
                     self._journal.delete_sagas(saga.idempotent_key)
                     self._worker.forget_done()
@@ -171,11 +190,15 @@ class SagaRunner:
                  saga_journal: Optional[SagaJournal] = None,
                  worker_journal: Optional[WorkerJournal] = None,
                  cfk: Optional[CommunicationFactory] = None,
-                 forget_done: bool = False):
+                 forget_done: bool = False,
+                 model_to_b: Callable[[M], bytes] = model_to_initial_data,
+                 model_from_b: Callable[[Type[M], bytes], M] = model_from_initial_data):
         self._forget_done = forget_done
         self._cfk = cfk
         self._worker_journal = worker_journal or MemoryJournal()
         self._saga_journal = saga_journal or MemorySagaJournal()
+        self._model_to_b = model_to_b
+        self._model_from_b = model_from_b
 
     def new(self, idempotent_key: UUID, saga: Callable[[SagaWorker, M], T], data: M) -> (
             SagaJob)[T]:
@@ -192,8 +215,9 @@ class SagaRunner:
         key = self.join_key(idempotent_key, getattr(saga, SAGA_NAME_ATTR))
         worker = SagaWorker(key, journal=self._worker_journal,
                             compensator=SagaCompensator(),
-                            sender=self._cfk.sender() if self._cfk is not None else None)
-        return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done)
+                            sender=self._cfk.sender() if self._cfk is not None else None,)
+        return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
+                       model_to_b=self._model_to_b)
 
     def run_incomplete(self) -> int:
         """
@@ -212,7 +236,7 @@ class SagaRunner:
                                                     f'"{saga_f.__name__}", без '
                                                     'оборачивания его в строку.')
                 self.new(
-                    UUID(idempotent_key), saga_f, model.model_validate_json(saga.get_initial_data())
+                    UUID(idempotent_key), saga_f, self._model_from_b(model, saga.initial_data)
                 ).run()
         return i
 

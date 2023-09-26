@@ -42,19 +42,6 @@ class SagaRecord(BaseModel):
     failed_time: Optional[datetime] = None
     """ Error time when exception happened. """
 
-    def set_initial_data(self, data: BaseModel) -> None:
-        """
-        Устанавливает начальные данные саги.
-        """
-        self.initial_data = base64.b64encode(data.model_dump_json().encode('utf8'))
-
-    def get_initial_data(self) -> str:
-        """
-        Возвращает начальные данные саги в виде json строки. Если данные не были установлены,
-        возвращается Ok().model_dump_json().
-        """
-        return base64.b64decode(self.initial_data).decode('utf8')
-
 
 class JobRecord(BaseModel):
     idempotent_operation_id: str
