@@ -1,6 +1,5 @@
 import functools
 import json
-import os
 import socket
 import threading
 from abc import ABC, abstractmethod
@@ -17,26 +16,28 @@ EventMap = Dict[str, Tuple[Type[BaseModel], Type[BaseModel], Callable[[BaseModel
 
 class EventSender(ABC):
     """
-    EventSender is responsible for sending events to EventListener.
+    `EventSender` отвечает за отправку событий в `EventListener`.
     """
 
     @abstractmethod
     def send(self, event: Event[Any, Any]) -> None:
         """
-        Sends event based on event specification.
+        Отправить событие event.
         """
 
     @abstractmethod
     def wait(self, event: Event[Any, Out]) -> Out:
         """
-        Wait for event return result. Method can be used only if event was sent.
+        Подождать результат события.
+        Метод может быть использован только в том случае, если событие было отправлено.
         """
 
 
 class EventListener(ABC):
     """
-    EventListener is responsible for receiving events from EventSender.
-    When an event is accepted EventListener routes it to a proper event handler function.
+    `EventListener` отвечает за получение событий от `EventSender`.
+    Когда событие принято, `EventListener` перенаправляет его в соответствующую функцию обработчик.
+    Функции обработчики могут быть получены методом `events_map`.
     """
 
     @abstractmethod
@@ -46,11 +47,13 @@ class EventListener(ABC):
     @staticmethod
     def events_map(*events: 'SagaEvents') -> EventMap:
         """
-        Returns EventMap specification of events.
-        Values of EventMap is: (
-            Event input model,
-            Event output model,
-            Callback that accepts instance of input model and returns instance of output model
+        Возвращает спецификацию событий `EventMap`.
+        Значения `EventMap`: (
+            Имя события.
+            Модель данных, которую принимает событие.
+            Модель данных, которую возвращает событие.
+            Обратный вызов, который принимает экземпляр входной модели и возвращает экземпляр
+            выходной модели.
         )
         """
         _map: EventMap = {}
@@ -62,25 +65,26 @@ class EventListener(ABC):
 
 class CommunicationFactory(ABC):
     """
-    Factory class for creating EventListener and EventSender objects.
+    Фабричный класс для создания объектов `EventListener` и `EventSender`.
     """
 
     @abstractmethod
     def listener(self, *events: 'SagaEvents') -> EventListener:
         """
-        Listener object that waits for incoming event and route it to proper function.
+        Объект слушателя, который ожидает входящего события и перенаправляет его в
+        соответствующую функцию обработчик.
         """
 
     @abstractmethod
     def sender(self) -> EventSender:
         """
-        Event sender object that sends events to listener.
+        Объект отправителя событий, который отправляет события слушателю.
         """
 
 
 class SagaEvents:
     """
-    SagaEvents is an events storage, like ApiRouter.
+    SagaEvents - это хранилище событий, подобное ApiRouter.
     """
 
     def __init__(self) -> None:
@@ -88,10 +92,18 @@ class SagaEvents:
 
     @property
     def handlers(self) -> Dict[EventSpec[BaseModel, BaseModel], Callable[[BaseModel], BaseModel]]:
+        """
+        Возвращает словарь обработчиков событий. Ключами являются спецификации событий,
+        значениями - их обработчики.
+        """
         return self._handlers
 
     def entry(self, spec: EventSpec[In, Out]) -> Callable[[Callable[[In], Out]],
                                                           Callable[[In], Out]]:
+        """
+        Зарегистрировать спецификацию spec.
+        Зарегистрированные спецификации могут быть получены методом `handlers`.
+        """
         def wrap(f: Callable[[In], Out]) -> Callable[[In], Out]:
             @functools.wraps(f)
             def inner(data: In) -> Out:
@@ -123,7 +135,7 @@ class SocketEventSender(EventSender):
         self._sock.send(json.dumps(data).encode('utf8'))
 
     def wait(self, event: Event[Any, Out]) -> Out:
-        assert self._sock is not None, 'No data has been sent, nothing to wait.'
+        assert self._sock is not None, 'Данные не были отправлены.'
         data = self._sock.recv(1024)
         self._disconnect()
         return event.model_out.model_validate_json(data)
