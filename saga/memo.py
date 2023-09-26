@@ -26,8 +26,7 @@ def object_from_bytes(b: bytes) -> Any:
 
 class Memoized:
     """
-    Memoized object is used to memorize return of any function and store it in journal.
-    Object can be used with single SagaWorker and must reinitialize for another worker.
+    Memoized используется для сохранения результата работы функции.
     """
     def __init__(self, memo_prefix: str, journal: WorkerJournal,
                  obj_to_b: Callable[[Any], bytes] = object_to_bytes,
@@ -45,11 +44,15 @@ class Memoized:
 
     def forget_done(self) -> None:
         """
-        Clears all done operations
+        Удалить все сохраненные результаты работы.
         """
         self._journal.delete_records(*self._done)
 
     def memoize(self, f: Callable[P, T]) -> Callable[P, T]:
+        """
+        Декоратор функции f. После декорирования, возвращаемое значение функции будет сохранено.
+        При повторном вызове f будет возвращен сохраненный результат вместо вызова функции.
+        """
         op_id = self._next_op_id()
 
         @functools.wraps(f)
