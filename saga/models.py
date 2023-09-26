@@ -14,33 +14,34 @@ Out = TypeVar('Out', bound=BaseModel)
 
 class Ok(BaseModel):
     """
-    Class is used to tell that is nothing to return or accept.
+    Класс используется для указания, что функция ничего не возвращает или ничего не принимает.
+    Атрибут ok не имеет смысла, но нужен чтобы корректно управлять данными.
     """
     ok: int = 1
 
 
 class JobStatus(str, Enum):
     RUNNING = 'RUNNING'
-    """ Method/saga is running. """
+    """ Функция/сага выполняется. """
     DONE = 'DONE'
-    """ Method/saga is executed with no errors. """
+    """ Функция/сага выполнена без ошибок. """
     FAILED = 'FAILED'
-    """ Method/saga is executed with errors. """
+    """ Функция/сага подняла исключение. """
 
 
 class SagaRecord(BaseModel):
     idempotent_key: str
-    """ A unique key of a saga. """
+    """ Идемпотентный уникальный ключ саги. """
     status: JobStatus = JobStatus.RUNNING
-    """ Current status of an operation. """
+    """ Текущий статус выполнения саги. """
     initial_data: bytes = base64.b64encode(Ok().model_dump_json().encode('utf8'))
-    """ Return content of an operation. """
+    """ Изначальные данные саги. """
     traceback: Optional[str] = None
-    """ Traceback of an operation """
+    """ Трассировка ошибки. """
     error: Optional[str] = None
-    """ Error message of an operation """
+    """ Сообщение об ошибке. """
     failed_time: Optional[datetime] = None
-    """ Error time when exception happened. """
+    """ Время возникновения ошибки. """
 
 
 class JobRecord(BaseModel):
