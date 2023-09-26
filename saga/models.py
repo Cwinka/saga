@@ -1,5 +1,5 @@
+import base64
 import pickle
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Generic, List, Optional, ParamSpec, Type, TypeVar
@@ -10,6 +10,13 @@ P = ParamSpec('P')
 T = TypeVar('T')
 In = TypeVar('In', bound=BaseModel)
 Out = TypeVar('Out', bound=BaseModel)
+
+
+class Ok(BaseModel):
+    """
+    Class is used to tell that is nothing to return or accept.
+    """
+    ok: int = 1
 
 
 class JobStatus(str, Enum):
@@ -26,7 +33,7 @@ class SagaRecord(BaseModel):
     """ A unique key of a saga. """
     status: JobStatus = JobStatus.RUNNING
     """ Current status of an operation. """
-    initial_data: bytes = pickle.dumps(None)
+    initial_data: bytes = base64.b64encode(Ok().model_dump_json().encode('utf8'))
     """ Return content of an operation. """
     traceback: Optional[str] = None
     """ Traceback of an operation """
@@ -35,14 +42,39 @@ class SagaRecord(BaseModel):
     failed_time: Optional[datetime] = None
     """ Error time when exception happened. """
 
+    def set_initial_data(self, data: BaseModel) -> None:
+        """
+        Устанавливает начальные данные саги.
+        """
+        self.initial_data = base64.b64encode(data.model_dump_json().encode('utf8'))
+
+    def get_initial_data(self) -> str:
+        """
+        Возвращает начальные данные саги в виде json строки. Если данные не были установлены,
+        возвращается Ok().model_dump_json().
+        """
+        return base64.b64decode(self.initial_data).decode('utf8')
+
 
 class JobRecord(BaseModel):
     idempotent_operation_id: str
     """ A unique key of an operation inside saga. """
     status: JobStatus = JobStatus.RUNNING
     """ Current status of an operation. """
-    result: bytes = pickle.dumps(None)
+    result: bytes = base64.b64encode(pickle.dumps(None))
     """ Return content of an operation. """
+
+    def set_result(self, r: Any) -> None:
+        """
+        Устанавливает результат в запись.
+        """
+        self.result = base64.b64encode(pickle.dumps(r))
+
+    def get_result(self) -> Any:
+        """
+        Возвращает результат из записи. Если результат не был установлен, возвращается None.
+        """
+        return pickle.loads(base64.b64decode(self.result))
 
 
 class JobSpec(Generic[P, T]):
@@ -71,13 +103,6 @@ class JobSpec(Generic[P, T]):
         :return: Result of the main function.
         """
         return self.f(*self._args, *self._orig_args, **self._orig_kwargs)
-
-
-class Ok(BaseModel):
-    """
-    Class is used to tell that is nothing to return or accept.
-    """
-    ok: int = 1
 
 
 class Event(Generic[In, Out]):

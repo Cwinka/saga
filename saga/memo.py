@@ -1,5 +1,4 @@
 import functools
-import pickle
 from typing import Callable, List, ParamSpec, TypeVar
 
 from saga.journal import WorkerJournal
@@ -42,14 +41,14 @@ class Memoized:
             # FIXME: также нужно запомнить аргументы вызова, чтобы при запуске с другими
             #  аргументами возвращался новый результат.
             if record.status == JobStatus.DONE:
-                return pickle.loads(record.result)  # type: ignore[no-any-return]
+                return record.get_result()  # type: ignore[no-any-return]
             try:
                 r = f(*args, **kwargs)
             except Exception:
                 record.status = JobStatus.FAILED
                 self._journal.update_record(record)
                 raise
-            record.result = pickle.dumps(r)
+            record.set_result(r)
             record.status = JobStatus.DONE
             self._journal.update_record(record)
             return r

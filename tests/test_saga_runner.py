@@ -42,7 +42,7 @@ def test_saga_runner_rerun_0(runner):
 
 def test_saga_runner_rerun_1(saga_journal):
     saga = saga_journal.create_saga(SagaRunner.join_key(uuid.uuid4(), 'foo'))
-    saga.initial_data = Ok().model_dump_json().encode('utf8')
+    saga.set_initial_data(Ok())
     saga.status = JobStatus.RUNNING
     saga_journal.update_saga(saga)
 

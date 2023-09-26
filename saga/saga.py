@@ -70,7 +70,7 @@ class SagaJob(Generic[T]):
         """
         if self._result is None:
             saga = self._get_saga()
-            saga.initial_data = self._data.model_dump_json().encode('utf8')
+            saga.set_initial_data(self._data)
             self._journal.update_saga(saga)
             self._result = self._pool.apply_async(self._f_with_compensation,
                                                   args=(self._worker, self._data))
@@ -212,8 +212,7 @@ class SagaRunner:
                                                     f'"{saga_f.__name__}", без '
                                                     'оборачивания его в строку.')
                 self.new(
-                    UUID(idempotent_key), saga_f,
-                    model.model_validate_json(saga.initial_data.decode('utf8'))
+                    UUID(idempotent_key), saga_f, model.model_validate_json(saga.get_initial_data())
                 ).run()
         return i
 
