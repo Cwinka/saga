@@ -1,26 +1,27 @@
 import threading
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from saga.models import JobRecord, JobStatus, SagaRecord
 
 
 class SagaJournal(ABC):
     """
-    Abstract saga journal to keep track of any saga execution.
-    Each saga must have a unique idempotent key associated with it.
+    Абстрактный журнал саги для отслеживания выполнения любой саги.
+    С каждой сагой связан уникальный идемпотентный ключ, который может быть использован в
+    качестве первичного ключа в базе данных.
     """
 
     @abstractmethod
     def get_saga(self, idempotent_key: str) -> Optional[SagaRecord]:
         """
-        Returns a saga record associated with idempotent_key.
+        Получить запись `SagaRecord`, связанную с idempotent_key.
         """
 
     @abstractmethod
     def create_saga(self, idempotent_key: str) -> SagaRecord:
         """
-        Creates new saga record with unique key idempotent_key.
+        Создать новую запись `SagaRecord` с уникальным ключом idempotent_key.
         """
 
     @abstractmethod
@@ -32,33 +33,32 @@ class SagaJournal(ABC):
     @abstractmethod
     def delete_sagas(self, *idempotent_keys: str) -> None:
         """
-        Deletes saga records.
+        Удалить записи `SagaRecord` с уникальными ключами idempotent_keys.
         """
 
     @abstractmethod
     def get_incomplete_saga(self) -> List[SagaRecord]:
         """
-        Return list of incomplete sagas.
+        Получить все незавершенные `SagaRecord`. Незавершенными записи считаются те, которые
+        имеют статус `JobStatus.RUNNING`.
         """
 
 
 class WorkerJournal(ABC):
     """
-    Abstract journal to keep track of all executed operations inside any saga.
-    Each saga must have a unique idempotent key associated with it. All operations
-    inside saga will be stored/updated via appropriate methods and also have a unique key.
+    Абстрактный журнал для отслеживания выполненных операций внутри саги.
     """
 
     @abstractmethod
     def get_record(self, idempotent_operation_id: str) -> Optional[JobRecord]:
         """
-        Returns a job record associated with idempotent_operation_id.
+        Получить запись `JobRecord`, связанную с уникальным ключом idempotent_operation_id.
         """
 
     @abstractmethod
     def create_record(self, idempotent_operation_id: str) -> JobRecord:
         """
-        Creates new job record with unique key idempotent_operation_id.
+        Создать запись `JobRecord`, с уникальным ключом idempotent_operation_id.
         """
 
     @abstractmethod
