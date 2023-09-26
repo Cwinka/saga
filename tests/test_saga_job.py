@@ -7,14 +7,6 @@ from saga.worker import SagaWorker
 from saga.models import Ok
 
 
-def str_return(worker: SagaWorker, _) -> str:
-    return '42'
-
-
-def float_return(worker: SagaWorker, _) -> float:
-    return 42.0
-
-
 def test_saga_job(saga_journal, worker):
     def foo(_worker: SagaWorker, _) -> int:
         return 1
@@ -24,8 +16,8 @@ def test_saga_job(saga_journal, worker):
 
 
 @pytest.mark.parametrize('test_function, expected_result', [
-    (str_return, '42'),
-    (float_return, 42.0),
+    (lambda _, r: '42', '42'),
+    (lambda _, r: 42.0, 42.0),
 ])
 def test_saga_job_run(saga_journal, worker, test_function, expected_result):
 
@@ -37,14 +29,11 @@ def test_saga_job_run(saga_journal, worker, test_function, expected_result):
            result == expected_result, 'Результат выполнения саги возвращается некорректно.'
 
 
-@pytest.mark.parametrize('forget_done, assert_f, msg', [
-    (False, lambda x, y: x == y,
-     'Запуск саг с одинаковыми ключами должен давать один результат.'),
-    (True, lambda x, y: x != y,
-     'Запуск саг с одинаковыми ключами, но с очисткой журнала после выполнения должен давать '
-     'разный результат.')
+@pytest.mark.parametrize('forget_done, assert_f', [
+    (False, lambda x, y: x == y,),
+    (True, lambda x, y: x != y)
 ])
-def test_saga_job_idempotent(saga_journal, wk_journal, compensator, forget_done, assert_f, msg):
+def test_saga_job_idempotent(saga_journal, wk_journal, compensator, forget_done, assert_f):
     def sum_return(worker: SagaWorker, _) -> int:
         s = 0
         for _ in range(10):
@@ -57,7 +46,8 @@ def test_saga_job_idempotent(saga_journal, wk_journal, compensator, forget_done,
     result1 = SagaJob(saga_journal, wk1, sum_return, Ok(), forget_done=forget_done).wait()
     result2 = SagaJob(saga_journal, wk2, sum_return, Ok()).wait()
 
-    assert assert_f(result1, result2), msg
+    assert assert_f(result1, result2), ('Запуск саг с одинаковыми ключами не дает ожидаемого '
+                                        'результата.')
 
 
 def test_saga_job_compensation(worker, saga_journal):
