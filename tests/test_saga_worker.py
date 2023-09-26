@@ -94,14 +94,14 @@ def test_worker_event_send(worker, communication_fk):
 
     communication_fk.listener(events).run_in_thread()
     time.sleep(0.05)  # wait socket to wake up
-    result = worker.event(event).run()
+    result = worker.event_job(event).run()
 
     assert event_delivered, 'Событий должно быть доставлено принимающей стороне.'
     assert result.ok == 10
 
 
 def test_worker_not_an_event_send(worker):
-    result = worker.event(lambda: NotAnEvent()).run()
+    result = worker.event_job(lambda: NotAnEvent()).run()
     assert isinstance(result, Ok), 'Событие NotAnEvent должно возвращать Ok.'
 
 
@@ -113,7 +113,7 @@ def test_worker_not_an_event_comp(worker):
         compensation_run = True
         return NotAnEvent()
 
-    worker.event(lambda: NotAnEvent()).with_compensation(comp).run()
+    worker.event_job(lambda: NotAnEvent()).with_compensation(comp).run()
     worker.compensate()
 
     assert not compensation_run, 'Компенсационная функция для NotAnEvent не должна запускаться.'

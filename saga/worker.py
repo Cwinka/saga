@@ -153,8 +153,8 @@ class SagaWorker:
             comp_set_callback=self._place_compensation
         )
 
-    def event(self, f: Callable[P, Event[In, Out]], *args: P.args,
-              **kwargs: P.kwargs) -> WorkerJob[Out, Event[Any, Any]]:
+    def event_job(self, f: Callable[P, Event[In, Out]], *args: P.args,
+                  **kwargs: P.kwargs) -> WorkerJob[Out, Event[Any, Any]]:
         """
         Creates a WorkerJob that sends returning event and waits it to come back.
         :param f: A function that returns an event.

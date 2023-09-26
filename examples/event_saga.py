@@ -47,7 +47,7 @@ def roll_event(x: Boo) -> Event[Foo, Ok]:
 
 @idempotent_saga('saga')
 def saga_2(worker: SagaWorker, _: Ok) -> None:
-    e = worker.event(event).with_compensation(roll_event).run()
+    e = worker.event_job(event).with_compensation(roll_event).run()
     print(worker.job(lambda x: random.randint(1, 1000) + x.boo, e).run())
 
 
