@@ -77,6 +77,22 @@ def test_worker_loop_compensate(worker):
     assert compensate_check == x**2/2 + x/2
 
 
+def test_worker_no_compensate_if_no_run(worker):
+    x = 42
+    compensate_check = 0
+
+    def foo(_x: int) -> None:
+        nonlocal compensate_check
+        compensate_check += _x
+
+    for i in range(1, x + 1):
+        worker.job(run_in_worker, i).with_compensation(foo)
+    worker.compensate()
+
+    assert compensate_check == 0, ('Метод `with_compensation` не должен добавлять компенсацию, '
+                                   'если функция не была запущена.')
+
+
 def test_worker_event_send(worker, communication_fk):
 
     events = SagaEvents()
