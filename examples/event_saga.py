@@ -1,4 +1,5 @@
 import random
+import uuid
 
 import redis
 from pydantic import BaseModel
@@ -46,7 +47,7 @@ def roll_event(x: Boo) -> Event[Foo, Ok]:
 
 @idempotent_saga('saga')
 def saga_2(worker: SagaWorker, _: Ok) -> None:
-    e = worker.event(event).with_compensation(roll_event).run()
+    e = worker.event_job(event).with_compensation(roll_event).run()
     print(worker.job(lambda x: random.randint(1, 1000) + x.boo, e).run())
 
 
@@ -58,4 +59,4 @@ if __name__ == '__main__':
     cfk.listener(events).run_in_thread()
 
     runner = SagaRunner(cfk=cfk)
-    runner.new('1', saga_2, Ok()).wait()
+    runner.new(uuid.uuid4(), saga_2, Ok()).wait()

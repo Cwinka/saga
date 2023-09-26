@@ -1,10 +1,12 @@
+import base64
 import datetime
 import functools
 import multiprocessing.pool
 import os
 import traceback
 from collections.abc import Callable
-from typing import Any, Concatenate, Dict, Generic, Optional, ParamSpec, Tuple, Type, TypeVar
+from typing import Any, Concatenate, Dict, Generic, List, Optional, ParamSpec, Tuple, Type, TypeVar
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -21,64 +23,74 @@ SAGA_NAME_ATTR = '__saga_name__'
 SAGA_KEY_SEPARATOR = '&'
 
 
+def model_to_initial_data(data: BaseModel) -> bytes:
+    """
+    Конвертировать модель в ascii байты.
+    """
+    return base64.b64encode(data.model_dump_json().encode('utf8'))
+
+
+def model_from_initial_data(model: Type[M], data: bytes) -> M:
+    """
+    Привести ascii байты data в модель model.
+    """
+    return model.model_validate_json(base64.b64decode(data).decode('utf8'))
+
+
 class SagaJob(Generic[T]):
     """
-    A SagaJob is responsible for creating saga objects.
-    Saga is a function marked with "idempotent_saga" decorator or created via initializing SagaJob
-    on a function.
+    `SagaJob` - обертка для функции саги, которая позволяет сохранять состояние выполнения функции.
 
-    @idempotent_saga
     def saga1(worker: SagaWorker, my_arg: int):
         pass
 
-    def saga2(worker: SagaWorker, my_arg: int):
-        pass
+    job1 = SagaJob(saga2, SagaWorker('1'), 42)
 
-    job1 = saga1(SagaWorker('1'), 42)
-    job2 = SagaJob(saga2, SagaWorker('1'), 42)  # same job as above
-
-    SagaJob is used to run sagas and sometimes wait for its execution done.
+    `SagaJob` используется для запуска/ожидания саг.
 
     job1.run()
-    job1.wait()  # "wait" method implies "run" method, so call "run" is redundant.
+    job1.wait()  # метод "wait" автоматически вызовет "run", поэтому вызов "run" избыточен.
     """
 
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
 
     def __init__(self, journal: SagaJournal, worker: SagaWorker,
                  saga: Callable[[SagaWorker, M], T], data: M,
-                 forget_done: bool = False) -> None:
+                 forget_done: bool = False,
+                 model_to_b: Callable[[M], bytes] = model_to_initial_data) -> None:
         """
         :param journal: Журнал саги.
         :param worker: Обработчик функций саги.
         :param saga: Функция саги.
         :param data: Входные данные саги, если данных нет, используется Ok.
-        :param forget_done: If True when saga completes it purge all saved journal records
-                           and can be run with same idempotent key.
+        :param forget_done: Если значение True, то по завершении все сохраненные записи журналов
+                            удаляться и сага может быть запущена с тем же идемпотентным ключом.
         """
         self._journal = journal
         self._worker = worker
         self._f_with_compensation = self._compensate_on_exception(saga)
         self._forget_done = forget_done
         self._data = data
+        self._model_to_b = model_to_b
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
 
     def run(self) -> None:
         """
-        Run a main function. Non-blocking.
+        Запустить сагу. Не блокирующий метод.
         """
         if self._result is None:
             saga = self._get_saga()
-            saga.initial_data = self._data.model_dump_json().encode('utf8')
-            self._journal.update_saga(saga)
+            self._journal.update_saga(saga.idempotent_key, ['initial_data'],
+                                      [self._model_to_b(self._data)])
             self._result = self._pool.apply_async(self._f_with_compensation,
                                                   args=(self._worker, self._data))
 
     def wait(self, timeout: Optional[float] = None) -> T:
         """
-        Wait for a main function is executed. Automatically implies run.
-        :param timeout: Time in seconds to wait for execution is done.
-        :return: Result of a main function.
+        Подождать выполнения саги. Автоматически вызывает "run".
+
+        :param timeout: Время ожидания завершения выполнения в секундах.
+        :return: Результат саги.
         """
         if self._result is None:
             self.run()
@@ -93,24 +105,26 @@ class SagaJob(Generic[T]):
 
     def _compensate_on_exception(self, f: Callable[P, T]) -> Callable[Concatenate[bool, P], T]:
         """
-        Wraps function f with try except block that runs compensation functions on any exception
-        inside f and then reraise an exception.
+        Оборачивает функцию f блоком try except, который запускает компенсационные функции
+        при любом исключении внутри f.
         """
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
             saga = self._get_saga()
+            fields: List[str] = []
+            values: List[Any] = []
             try:
-                saga.status = JobStatus.DONE
+                fields.append('status')
+                values.append(JobStatus.DONE)
                 return f(*args, **kwargs)
             except Exception as e:
-                saga.status = JobStatus.FAILED
-                saga.failed_time = datetime.datetime.now()
-                saga.error = str(e)
-                saga.traceback = traceback.format_exc()
+                fields.extend(['status', 'failed_time', 'error', 'traceback'])
+                values.extend([JobStatus.FAILED, datetime.datetime.now(), str(e),
+                               traceback.format_exc()])
                 self._worker.compensate()
                 raise
             finally:
-                self._journal.update_saga(saga)
+                self._journal.update_saga(saga.idempotent_key, fields, values)
                 if self._forget_done:
                     self._journal.delete_sagas(saga.idempotent_key)
                     self._worker.forget_done()
@@ -119,50 +133,50 @@ class SagaJob(Generic[T]):
 
 class SagaRunner:
     """
-    SagaRunner is a factory class that manipulates SagaJob objects.
 
-    To register a faction as a saga two methods can be used:
+    SagaRunner - это фабричный класс, который создает объекты SagaJob.
 
-        # using decorator
+    Чтобы зарегистрировать фракцию в качестве саги, можно использовать два метода:
+
+        # использовать декоратор
         @idempotent_saga('saga_name')
         def my_saga(worker: SagaWorker, _: Ok) -> Ok:
             ...
 
-        # or register function manually:
-
+        # или зарегистрировать функцию вручную:
         def my_saga(worker: SagaWorker, _: Ok) -> Ok:
             ...
 
         SagaRunner.register_saga('saga_name', my_saga)
 
-    First argument of any saga is a SagaWorker object that SagaRunner provides automatically to
-    any saga. Second argument is an input data of a saga, and it must be a subtype of the
-    `pydantic.BaseModel` class. If a saga function does not need input data a special `Ok` class
-    can be used to pass it in a saga.
+    Первым аргументом функции саги является объект `SagaWorker`, предоставляемый `SagaRunner`
+    автоматически. Второй аргумент - это входные данные функции saga, наследуемые от
+    `pydantic.BaseModel`.
+    Если функция saga не нуждается во входных данных, может быть использован класс `Ok`.
 
-    To start any saga method `new` is used:
+    Для создания саги используется метод `new`:
 
         runner = SagaRunner()
 
         saga = runner.new('idempotent_key', my_saga, Ok())
-        saga.run()  # to run in a non-blocking mode.
-        saga.wait()  # to run in a blocking mode.
 
-    The first argument of `new` method is idempotent key string that is unique across runs. If
-    the same saga runs with a used idempotent key it provides the same result as the previous
-    run with this idempotent key.
+    Первым аргументом метода `new` является уникальный идемпотентный ключ. Если сага
+    запускается с используемым одного и того же идемпотентного ключа, сага вернет одинаковый
+    результат для обоих запусков.
 
     The `SagaJob.wait` method can raise an exception if it happens inside a saga, so it must be
     used with try except block to process code further.
 
-    Any saga can end up in an incomplete state (neither in `SagaStatus.DONE` nor
-    `SagaStatus.FAILED` but in `SagaStatus.RUNNING` state) because of unexpected exit or power
-    failure. Incomplete sagas can be re-executed to finish it properly:
+    Метод `SagaJob.wait` может вернуть исключение, если оно происходит внутри саги.
 
-        journal = SagaJournalImplementation()
+    Любая запущенная сага может оказаться в незавершенном состоянии (ни в `SagaStatus.DONE`
+    ни в `SagaStatus.FAILED`, а в `SagaStatus.RUNNING` состоянии) из-за неожиданного завершения
+    работы. Незавершенные саги могут быть выполнены повторно:
+
+        journal = SagaJournalImplementation()  # реализация журнала
         runner = SagaRunner(saga_journal=journal)
 
-        runner.run_incomplete()  # returns number of started sagas.
+        runner.run_incomplete()  # возвращает количество запущенных саг.
     """
     _sagas: Dict[str, Callable[[SagaWorker, M], Any]] = {}
 
@@ -170,33 +184,39 @@ class SagaRunner:
                  saga_journal: Optional[SagaJournal] = None,
                  worker_journal: Optional[WorkerJournal] = None,
                  cfk: Optional[CommunicationFactory] = None,
-                 forget_done: bool = False):
+                 forget_done: bool = False,
+                 model_to_b: Callable[[M], bytes] = model_to_initial_data,
+                 model_from_b: Callable[[Type[M], bytes], M] = model_from_initial_data):
         self._forget_done = forget_done
         self._cfk = cfk
         self._worker_journal = worker_journal or MemoryJournal()
         self._saga_journal = saga_journal or MemorySagaJournal()
+        self._model_to_b = model_to_b
+        self._model_from_b = model_from_b
 
-    def new(self, idempotent_key: str, saga: Callable[[SagaWorker, M], T], data: M) -> (
+    def new(self, idempotent_key: UUID, saga: Callable[[SagaWorker, M], T], data: M) -> (
             SagaJob)[T]:
         """
-        Creates new SagaJob object to run saga.
+        Создать новый объект `SagaJob`.
 
-        :param idempotent_key: Unique key for saga execution.
-        :param saga: Registered saga function.
-        :param data: Input data of a saga.
+        :param idempotent_key: Уникальный ключ саги.
+        :param saga: Зарегистрированная функция саги.
+        :param data: Входные данные саги.
         """
         assert hasattr(saga, SAGA_NAME_ATTR), (f'Функция "{saga.__name__}" не является сагой. '
                                                f'Используйте декоратор "{idempotent_saga.__name__}"'
                                                f' чтобы отметить функцию как сагу.')
-        idempotent_key = self.join_key(idempotent_key, getattr(saga, SAGA_NAME_ATTR))
-        worker = SagaWorker(idempotent_key, journal=self._worker_journal,
+        key = self.join_key(idempotent_key, getattr(saga, SAGA_NAME_ATTR))
+        worker = SagaWorker(key, journal=self._worker_journal,
                             compensator=SagaCompensator(),
-                            sender=self._cfk.sender() if self._cfk is not None else None)
-        return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done)
+                            sender=self._cfk.sender() if self._cfk is not None else None,)
+        return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
+                       model_to_b=self._model_to_b)
 
     def run_incomplete(self) -> int:
         """
-        Rerun all incomplete sagas. Returns the number of running sagas. Does not block execution.
+        Запустить все незавершенные саги. Возвращает количество запущенных саг. Не блокирует
+        выполнение.
         """
         i = 0
         for i, saga in enumerate(self._saga_journal.get_incomplete_saga(), 1):
@@ -211,15 +231,15 @@ class SagaRunner:
                                                     f'"{saga_f.__name__}", без '
                                                     'оборачивания его в строку.')
                 self.new(
-                    idempotent_key, saga_f,
-                    model.model_validate_json(saga.initial_data.decode('utf8'))
+                    UUID(idempotent_key), saga_f,
+                    self._model_from_b(model, saga.initial_data)  # type: ignore[arg-type]
                 ).run()
         return i
 
     @classmethod
     def register_saga(cls, name: str, saga: Callable[[SagaWorker, M], Any]) -> None:
         """
-        Registers a saga function with a given name.
+        Зарегистрировать функцию saga с именем name.
         """
         setattr(saga, SAGA_NAME_ATTR, name)
         cls._sagas[name] = saga
@@ -227,29 +247,28 @@ class SagaRunner:
     @classmethod
     def get_saga(cls, name: str) -> Optional[Callable[[SagaWorker, M], Any]]:
         """
-        Returns registered saga function with a given name.
+        Получить зарегистрированную функцию саги с именем name.
         """
         return cls._sagas.get(name)
 
     @staticmethod
-    def join_key(idempotent_key: str, saga_name: str) -> str:
+    def join_key(idempotent_key: UUID, saga_name: str) -> str:
         """
-        Returns a string that can be used to retrieve SagaRecord object from SagaJournal.
+        Вернуть строку, которую можно использовать для получения объекта
+        `SagaRecord` из `SagaJournal`.
         """
-        clear_key = idempotent_key.replace(SAGA_KEY_SEPARATOR, '-')
-        clear_name = saga_name.replace(SAGA_KEY_SEPARATOR, '-')
-        return f'{clear_key}{SAGA_KEY_SEPARATOR}{clear_name}'
+        return f'{idempotent_key}{SAGA_KEY_SEPARATOR}{saga_name}'
 
     @staticmethod
     def _split_key(joined_key: str) -> Tuple[str, str]:
-        key, name = joined_key.split(SAGA_KEY_SEPARATOR)
-        return key, name
+        key, *name = joined_key.split(SAGA_KEY_SEPARATOR)
+        return key, ''.join(name)
 
 
 def idempotent_saga(name: str) \
         -> Callable[[Callable[[SagaWorker, M], T]], Callable[[SagaWorker, M], T]]:
     """
-    Register a function like a saga function in SagaRunner.
+    Зарегистрировать функцию, как сагу, в `SagaRunner` с именем name.
     """
     def decorator(f: Callable[[SagaWorker, M], T]) -> Callable[[SagaWorker, M], T]:
         SagaRunner.register_saga(name, f)

@@ -1,3 +1,5 @@
+import uuid
+
 from pydantic import BaseModel
 
 from saga import SagaRunner, SagaWorker, idempotent_saga
@@ -33,7 +35,7 @@ def second_saga(worker: SagaWorker, data: DataForSecond) -> None:
 def main() -> None:
     runner = SagaRunner()
 
-    runner.new('1', first_saga, DataForFirst(count=10)).wait()
+    runner.new(uuid.uuid4(), first_saga, DataForFirst(count=10)).wait()
 
 
 if __name__ == '__main__':

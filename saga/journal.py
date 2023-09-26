@@ -1,76 +1,87 @@
 import threading
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from saga.models import JobRecord, JobStatus, SagaRecord
 
 
 class SagaJournal(ABC):
     """
-    Abstract saga journal to keep track of any saga execution.
-    Each saga must have a unique idempotent key associated with it.
+    Абстрактный журнал саги для отслеживания выполнения любой саги.
+    С каждой сагой связан уникальный идемпотентный ключ, который может быть использован в
+    качестве первичного ключа в базе данных.
     """
 
     @abstractmethod
     def get_saga(self, idempotent_key: str) -> Optional[SagaRecord]:
         """
-        Returns a saga record associated with idempotent_key.
+        Получить запись `SagaRecord`, связанную с idempotent_key.
         """
 
     @abstractmethod
     def create_saga(self, idempotent_key: str) -> SagaRecord:
         """
-        Creates new saga record with unique key idempotent_key.
+        Создать новую запись `SagaRecord` с уникальным ключом idempotent_key.
         """
 
     @abstractmethod
-    def update_saga(self, saga: SagaRecord) -> None:
+    def update_saga(self, idempotent_key: str, fields: List[str], values: List[Any]) -> None:
         """
-        Updates saga record.
+        Обновить запись `SagaRecord` с уникальным ключом idempotent_key.
+
+        :param idempotent_key: Уникальный ключ записи `SagaRecord`.
+        :param fields: Поля, которые необходимо обновить.
+        :param values: Значения обновляемых полей. Значения гарантированно того же типа, что и
+                       поле.
         """
 
     @abstractmethod
     def delete_sagas(self, *idempotent_keys: str) -> None:
         """
-        Deletes saga records.
+        Удалить записи `SagaRecord` с уникальными ключами idempotent_keys.
         """
 
     @abstractmethod
     def get_incomplete_saga(self) -> List[SagaRecord]:
         """
-        Return list of incomplete sagas.
+        Получить все незавершенные `SagaRecord`. Незавершенными записи считаются те, которые
+        имеют статус `JobStatus.RUNNING`.
         """
 
 
 class WorkerJournal(ABC):
     """
-    Abstract journal to keep track of all executed operations inside any saga.
-    Each saga must have a unique idempotent key associated with it. All operations
-    inside saga will be stored/updated via appropriate methods and also have a unique key.
+    Абстрактный журнал для отслеживания выполненных операций внутри саги.
     """
 
     @abstractmethod
     def get_record(self, idempotent_operation_id: str) -> Optional[JobRecord]:
         """
-        Returns a job record associated with idempotent_operation_id.
+        Получить запись `JobRecord`, связанную с уникальным ключом idempotent_operation_id.
         """
 
     @abstractmethod
     def create_record(self, idempotent_operation_id: str) -> JobRecord:
         """
-        Creates new job record with unique key idempotent_operation_id.
+        Создать запись `JobRecord`, с уникальным ключом idempotent_operation_id.
         """
 
     @abstractmethod
-    def update_record(self, record: JobRecord) -> None:
+    def update_record(self, idempotent_operation_id: str, fields: List[str],
+                      values: List[Any]) -> None:
         """
-        Updates job record.
+        Обновить запись `JobRecord` с уникальным ключом idempotent_operation_id.
+
+        :param idempotent_operation_id: Уникальный ключ записи `JobRecord`.
+        :param fields: Поля, которые необходимо обновить.
+        :param values: Значения обновляемых полей. Значения гарантированно того же типа, что и
+                       поле.
         """
 
     @abstractmethod
-    def delete_records(self, *records: JobRecord) -> None:
+    def delete_records(self, *idempotent_operation_ids: str) -> None:
         """
-        Deletes job records.
+        Удалить записи `JobRecord` с уникальным ключами idempotent_operation_ids.
         """
 
 
@@ -92,9 +103,11 @@ class MemorySagaJournal(SagaJournal):
             )
             return self._sagas[idempotent_key]
 
-    def update_saga(self, saga: SagaRecord) -> None:
+    def update_saga(self, idempotent_key: str, fields: List[str], values: List[Any]) -> None:
         with self._lock:
-            self._sagas[saga.idempotent_key] = saga
+            saga = self._sagas[idempotent_key]
+            for field, value in zip(fields, values):
+                setattr(saga, field, value)
 
     def delete_sagas(self, *idempotent_keys: str) -> None:
         with self._lock:
@@ -123,11 +136,13 @@ class MemoryJournal(WorkerJournal):
             )
             return self._records[idempotent_operation_id]
 
-    def update_record(self, record: JobRecord) -> None:
+    def update_record(self, idempotent_operation_id: str, fields: List[str],
+                      values: List[Any]) -> None:
         with self._lock:
-            self._records[record.idempotent_operation_id] = record
+            record = self._records[idempotent_operation_id]
+            for field, value in zip(fields, values):
+                setattr(record, field, value)
 
-    def delete_records(self, *records: JobRecord) -> None:
-        with self._lock:
-            for r in records:
-                del self._records[r.idempotent_operation_id]
+    def delete_records(self, *idempotent_operation_ids: str) -> None:
+        for key in idempotent_operation_ids:
+            del self._records[key]

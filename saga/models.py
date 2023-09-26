@@ -1,8 +1,8 @@
+import base64
 import pickle
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Generic, List, Optional, ParamSpec, Type, TypeVar, Union
+from typing import Any, Callable, Generic, List, Optional, ParamSpec, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -12,38 +12,44 @@ In = TypeVar('In', bound=BaseModel)
 Out = TypeVar('Out', bound=BaseModel)
 
 
+class Ok(BaseModel):
+    """
+    Класс используется для указания, что функция ничего не возвращает или ничего не принимает.
+    Атрибут ok не имеет смысла, но нужен чтобы корректно управлять данными.
+    """
+    ok: int = 1
+
+
 class JobStatus(str, Enum):
     RUNNING = 'RUNNING'
-    """ Method/saga is running. """
+    """ Функция/сага выполняется. """
     DONE = 'DONE'
-    """ Method/saga is executed with no errors. """
+    """ Функция/сага выполнена без ошибок. """
     FAILED = 'FAILED'
-    """ Method/saga is executed with errors. """
+    """ Функция/сага подняла исключение. """
 
 
-@dataclass
-class SagaRecord:
+class SagaRecord(BaseModel):
     idempotent_key: str
-    """ A unique key of a saga. """
+    """ Идемпотентный уникальный ключ саги. """
     status: JobStatus = JobStatus.RUNNING
-    """ Current status of an operation. """
-    initial_data: bytes = pickle.dumps(None)
-    """ Return content of an operation. """
+    """ Текущий статус выполнения саги. """
+    initial_data: bytes = base64.b64encode(Ok().model_dump_json().encode('utf8'))
+    """ Изначальные данные саги. """
     traceback: Optional[str] = None
-    """ Traceback of an operation """
+    """ Трассировка ошибки. """
     error: Optional[str] = None
-    """ Error message of an operation """
+    """ Сообщение об ошибке. """
     failed_time: Optional[datetime] = None
-    """ Error time when exception happened. """
+    """ Время возникновения ошибки. """
 
 
-@dataclass
-class JobRecord:
+class JobRecord(BaseModel):
     idempotent_operation_id: str
     """ A unique key of an operation inside saga. """
     status: JobStatus = JobStatus.RUNNING
     """ Current status of an operation. """
-    result: bytes = pickle.dumps(None)
+    result: bytes = base64.b64encode(pickle.dumps(None))
     """ Return content of an operation. """
 
 
@@ -73,13 +79,6 @@ class JobSpec(Generic[P, T]):
         :return: Result of the main function.
         """
         return self.f(*self._args, *self._orig_args, **self._orig_kwargs)
-
-
-class Ok(BaseModel):
-    """
-    Class is used to tell that is nothing to return or accept.
-    """
-    ok: int = 1
 
 
 class Event(Generic[In, Out]):

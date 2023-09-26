@@ -77,6 +77,22 @@ def test_worker_loop_compensate(worker):
     assert compensate_check == x**2/2 + x/2
 
 
+def test_worker_no_compensate_if_no_run(worker):
+    x = 42
+    compensate_check = 0
+
+    def foo(_x: int) -> None:
+        nonlocal compensate_check
+        compensate_check += _x
+
+    for i in range(1, x + 1):
+        worker.job(run_in_worker, i).with_compensation(foo)
+    worker.compensate()
+
+    assert compensate_check == 0, ('Метод `with_compensation` не должен добавлять компенсацию, '
+                                   'если функция не была запущена.')
+
+
 def test_worker_event_send(worker, communication_fk):
 
     events = SagaEvents()
@@ -94,14 +110,14 @@ def test_worker_event_send(worker, communication_fk):
 
     communication_fk.listener(events).run_in_thread()
     time.sleep(0.05)  # wait socket to wake up
-    result = worker.event(event).run()
+    result = worker.event_job(event).run()
 
     assert event_delivered, 'Событий должно быть доставлено принимающей стороне.'
     assert result.ok == 10
 
 
 def test_worker_not_an_event_send(worker):
-    result = worker.event(lambda: NotAnEvent()).run()
+    result = worker.event_job(lambda: NotAnEvent()).run()
     assert isinstance(result, Ok), 'Событие NotAnEvent должно возвращать Ok.'
 
 
@@ -113,7 +129,7 @@ def test_worker_not_an_event_comp(worker):
         compensation_run = True
         return NotAnEvent()
 
-    worker.event(lambda: NotAnEvent()).with_compensation(comp).run()
+    worker.event_job(lambda: NotAnEvent()).with_compensation(comp).run()
     worker.compensate()
 
     assert not compensation_run, 'Компенсационная функция для NotAnEvent не должна запускаться.'

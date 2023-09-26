@@ -1,5 +1,6 @@
 import os
 import tempfile
+import uuid
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -36,7 +37,7 @@ def main() -> None:
 
     runner = SagaRunner()
     try:
-        runner.new('1', create_spec_in_directory, SpecData(path=path)).wait()
+        runner.new(uuid.uuid4(), create_spec_in_directory, SpecData(path=path)).wait()
     except AttributeError:
         pass
     print(list(path.glob('*')))  # пусто, так как все операции откатились.
