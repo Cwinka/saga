@@ -79,9 +79,9 @@ class WorkerJournal(ABC):
         """
 
     @abstractmethod
-    def delete_records(self, *records: JobRecord) -> None:
+    def delete_records(self, *idempotent_operation_ids: str) -> None:
         """
-        Deletes job records.
+        Удалить записи `JobRecord` с уникальным ключами idempotent_operation_ids.
         """
 
 
@@ -143,7 +143,6 @@ class MemoryJournal(WorkerJournal):
             for field, value in zip(fields, values):
                 setattr(record, field, value)
 
-    def delete_records(self, *records: JobRecord) -> None:
-        with self._lock:
-            for r in records:
-                del self._records[r.idempotent_operation_id]
+    def delete_records(self, *idempotent_operation_ids: str) -> None:
+        for key in idempotent_operation_ids:
+            del self._records[key]

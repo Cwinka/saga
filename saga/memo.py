@@ -4,7 +4,7 @@ import pickle
 from typing import Any, Callable, List, ParamSpec, TypeVar
 
 from saga.journal import WorkerJournal
-from saga.models import JobRecord, JobStatus
+from saga.models import JobStatus
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -35,7 +35,7 @@ class Memoized:
         self._journal = journal
         self._memo_prefix = memo_prefix
         self._operation_id = 0
-        self._done: List[JobRecord] = []
+        self._done: List[str] = []
         self._obj_to_b = obj_to_b
         self._obj_from_b = obj_from_b
 
@@ -57,7 +57,7 @@ class Memoized:
             record = self._journal.get_record(op_id)
             if record is None:
                 record = self._journal.create_record(op_id)
-                self._done.append(record)
+                self._done.append(record.idempotent_operation_id)
             # FIXME: также нужно запомнить аргументы вызова, чтобы при запуске с другими
             #  аргументами возвращался новый результат.
             if record.status == JobStatus.DONE:

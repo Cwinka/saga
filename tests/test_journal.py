@@ -34,8 +34,8 @@ def test_update():
 def test_delete():
     key = '1'
     record = JobRecord(idempotent_operation_id=key)
-    dct = {record.idempotent_operation_id: record}
+    dct = {key: record}
     journal = MemoryJournal(dct)
-    journal.delete_records(record)
+    journal.delete_records(key)
 
     assert dct == {}
