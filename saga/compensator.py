@@ -26,6 +26,5 @@ class SagaCompensator:
         Запустить все добавленные компенсационные функции.
         Может быть запущено только один раз. При повторном запуске не имеет эффекта.
         """
-        self._compensations.reverse()
         while self._compensations:
             self._compensations.pop().call()
