@@ -41,15 +41,21 @@ class SagaJob(Generic[T]):
     """
     `SagaJob` - обертка для функции саги, которая позволяет сохранять состояние выполнения функции.
 
-    def saga1(worker: SagaWorker, my_arg: int):
-        pass
+    Первым аргументом функции саги является объект `SagaWorker`.
+    Второй аргумент - это входные данные функции saga, наследуемые от `pydantic.BaseModel`.
+    Если функция саги не нуждается во входных данных, может быть использован класс `Ok`.
 
-    job1 = SagaJob(saga2, SagaWorker('1'), 42)
+        def saga1(worker: SagaWorker, my_arg: int):
+            pass
 
-    `SagaJob` используется для запуска/ожидания саг.
+        job1 = SagaJob(saga2, SagaWorker('1'), 42)
 
-    job1.run()
-    job1.wait()  # метод "wait" автоматически вызовет "run", поэтому вызов "run" избыточен.
+    `SagaJob.run`/`SagaJob.wait` используется для запуска/ожидания саг соответственно.
+
+        job1.run()
+        job1.wait()  # метод "wait" автоматически вызовет "run", поэтому вызов "run" избыточен.
+
+    ВАЖНО: Метод `SagaJob.wait` может вернуть исключение, если оно происходит внутри саги.
     """
 
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
@@ -65,6 +71,7 @@ class SagaJob(Generic[T]):
         :param data: Входные данные саги, если данных нет, используется Ok.
         :param forget_done: Если значение True, то по завершении все сохраненные записи журналов
                             удаляться и сага может быть запущена с тем же идемпотентным ключом.
+        :param model_to_b: Функция конвертации модели данных в байты.
         """
         self._journal = journal
         self._worker = worker
@@ -133,48 +140,35 @@ class SagaJob(Generic[T]):
 
 class SagaRunner:
     """
+    SagaRunner - это фабричный класс, для создания объектов SagaJob.
 
-    SagaRunner - это фабричный класс, который создает объекты SagaJob.
+    Чтобы зарегистрировать функцию в качестве саги, существует два метода:
 
-    Чтобы зарегистрировать фракцию в качестве саги, можно использовать два метода:
-
-        # использовать декоратор
+        # использование декоратора
         @idempotent_saga('saga_name')
         def my_saga(worker: SagaWorker, _: Ok) -> Ok:
             ...
 
-        # или зарегистрировать функцию вручную:
+        # регистрация функции саги вручную:
         def my_saga(worker: SagaWorker, _: Ok) -> Ok:
             ...
-
         SagaRunner.register_saga('saga_name', my_saga)
-
-    Первым аргументом функции саги является объект `SagaWorker`, предоставляемый `SagaRunner`
-    автоматически. Второй аргумент - это входные данные функции saga, наследуемые от
-    `pydantic.BaseModel`.
-    Если функция saga не нуждается во входных данных, может быть использован класс `Ok`.
 
     Для создания саги используется метод `new`:
 
-        runner = SagaRunner()
+        runner = SagaRunner(...)
+        saga = runner.new(UUID, my_saga, Ok())
 
-        saga = runner.new('idempotent_key', my_saga, Ok())
-
-    Первым аргументом метода `new` является уникальный идемпотентный ключ. Если сага
-    запускается с используемым одного и того же идемпотентного ключа, сага вернет одинаковый
-    результат для обоих запусков.
-
-    The `SagaJob.wait` method can raise an exception if it happens inside a saga, so it must be
-    used with try except block to process code further.
-
-    Метод `SagaJob.wait` может вернуть исключение, если оно происходит внутри саги.
+    Первым аргументом метода `new` является уникальный идемпотентный ключ, представленный в виде
+    любого UUID. Если сага запускается с используемым одного и того же идемпотентного ключа,
+    сага вернет одинаковый результат для обоих запусков.
 
     Любая запущенная сага может оказаться в незавершенном состоянии (ни в `SagaStatus.DONE`
     ни в `SagaStatus.FAILED`, а в `SagaStatus.RUNNING` состоянии) из-за неожиданного завершения
-    работы. Незавершенные саги могут быть выполнены повторно:
+    работы программы. Незавершенные саги могут быть выполнены повторно:
 
         journal = SagaJournalImplementation()  # реализация журнала
-        runner = SagaRunner(saga_journal=journal)
+        runner = SagaRunner(saga_journal=journal)  # по умолчанию используются журналы в памяти
 
         runner.run_incomplete()  # возвращает количество запущенных саг.
     """
@@ -187,6 +181,14 @@ class SagaRunner:
                  forget_done: bool = False,
                  model_to_b: Callable[[M], bytes] = model_to_initial_data,
                  model_from_b: Callable[[Type[M], bytes], M] = model_from_initial_data):
+        """
+        :param saga_journal: Журнал записей саг.
+        :param worker_journal: Журнал записей шагов саги.
+        :param cfk: Фабрика для использования событий внутри саги.
+        :param forget_done: Если True, после выполнения, все записи выполненной саги удаляться.
+        :param model_to_b: Функция конвертации модели данных в байты.
+        :param model_from_b: Функция конвертации байт в модель данных.
+        """
         self._forget_done = forget_done
         self._cfk = cfk
         self._worker_journal = worker_journal or MemoryJournal()
