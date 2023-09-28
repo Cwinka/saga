@@ -30,6 +30,10 @@ mypy = [
 
 [tool.mypy]
 strict = true
+exclude = [
+    '^test_*.py$', # не проверять модуль с тестами
+    '^conftest.py$',
+]
 
 [tool.pytest.ini_options]
 addopts = [
