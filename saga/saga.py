@@ -256,6 +256,23 @@ class SagaRunner:
         assert hasattr(saga, SAGA_NAME_ATTR), cls._not_a_saga_msg(saga)
         return getattr(saga, SAGA_NAME_ATTR)  # type: ignore[no-any-return]
 
+    def get_saga_record_by_uid(self, idempotent_key: UUID, saga: Callable[[SagaWorker, M], T]) \
+            -> Optional[SagaRecord]:
+        """
+        Получить запись о состоянии запущенной саги saga, с идемпотентным ключом
+        idempotent_key.
+        """
+        key = self.join_key(idempotent_key, self.get_saga_name(saga))
+        return self._saga_journal.get_saga(key)
+
+    def get_saga_record_by_wkey(self, worker_idempotent_key: str) -> Optional[SagaRecord]:
+        """
+        Получить запись о состоянии запущенной саги по идемпотентному ключу
+        worker_idempotent_key.
+        :param worker_idempotent_key: Идемпотентный ключ SagaWorker.
+        """
+        return self._saga_journal.get_saga(worker_idempotent_key)
+
     @staticmethod
     def join_key(idempotent_key: UUID, saga_name: str) -> str:
         """
