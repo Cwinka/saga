@@ -65,3 +65,16 @@ def test_saga_runner_rerun_exc(runner):
         pass
 
     assert runner.run_incomplete() == 0, 'Саги, завершенные с ошибкой не должны быть перезапущены.'
+
+
+def test_get_saga_name_via_decorator(runner):
+    name = 'foo'
+    saga = idempotent_saga(name)(lambda *a: None)
+    assert runner.get_saga_name(saga) == name
+
+
+def test_get_saga_name_via_method(runner):
+    name = 'foo'
+    saga = lambda *a: None
+    runner.register_saga(name=name, saga=saga)
+    assert runner.get_saga_name(saga) == name
