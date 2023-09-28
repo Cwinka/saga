@@ -1,8 +1,9 @@
 import uuid
+from typing import Optional
 
 import pytest
 
-from saga.models import JobStatus, Ok
+from saga.models import JobStatus, Ok, SagaRecord
 from saga.saga import SagaJob, SagaRunner, idempotent_saga
 from saga.worker import SagaWorker
 
@@ -65,3 +66,37 @@ def test_saga_runner_rerun_exc(runner):
         pass
 
     assert runner.run_incomplete() == 0, 'Саги, завершенные с ошибкой не должны быть перезапущены.'
+
+
+def test_get_saga_name_via_decorator(runner):
+    name = 'foo'
+    saga = idempotent_saga(name)(lambda *a: None)
+    assert runner.get_saga_name(saga) == name
+
+
+def test_get_saga_name_via_method(runner):
+    name = 'foo'
+    saga = lambda *a: None
+    runner.register_saga(name=name, saga=saga)
+    assert runner.get_saga_name(saga) == name
+
+
+def test_get_saga_record(runner):
+    saga = idempotent_saga('foo')(lambda *a: None)
+    key = uuid.uuid4()
+    runner.new(key, saga, Ok()).wait()
+
+    record = runner.get_saga_record_by_uid(key, saga)
+    assert isinstance(record, SagaRecord)
+
+
+def test_get_saga_record_by_wkey(runner):
+    key = uuid.uuid4()
+
+    @idempotent_saga('foo')
+    def saga(worker: SagaWorker, _) -> Optional[SagaRecord]:
+        return runner.get_saga_record_by_wkey(worker.idempotent_key)
+
+    result = runner.new(key, saga, Ok()).wait()
+
+    assert isinstance(result, SagaRecord)
