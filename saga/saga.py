@@ -19,6 +19,7 @@ from saga.worker import SagaWorker
 P = ParamSpec('P')
 T = TypeVar('T')
 M = TypeVar('M', bound=BaseModel)
+Saga = Callable[[SagaWorker, M], T]
 SAGA_NAME_ATTR = '__saga_name__'
 SAGA_KEY_SEPARATOR = '&'
 
@@ -60,9 +61,8 @@ class SagaJob(Generic[T]):
 
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
 
-    def __init__(self, journal: SagaJournal, worker: SagaWorker,
-                 saga: Callable[[SagaWorker, M], T], data: M,
-                 forget_done: bool = False,
+    def __init__(self, journal: SagaJournal, worker: SagaWorker, saga: Saga[M, T],
+                 data: M, forget_done: bool = False,
                  model_to_b: Callable[[M], bytes] = model_to_initial_data) -> None:
         """
         :param journal: Журнал саги.
@@ -196,8 +196,7 @@ class SagaRunner:
         self._model_to_b = model_to_b
         self._model_from_b = model_from_b
 
-    def new(self, idempotent_key: UUID, saga: Callable[[SagaWorker, M], T], data: M) -> (
-            SagaJob)[T]:
+    def new(self, idempotent_key: UUID, saga: Saga[M, T], data: M) -> SagaJob[T]:
         """
         Создать новый объект `SagaJob`.
 
@@ -237,7 +236,7 @@ class SagaRunner:
         return i
 
     @classmethod
-    def register_saga(cls, name: str, saga: Callable[[SagaWorker, M], Any]) -> None:
+    def register_saga(cls, name: str, saga: Saga[M, Any]) -> None:
         """
         Зарегистрировать функцию saga с именем name.
         """
@@ -245,18 +244,18 @@ class SagaRunner:
         cls._sagas[name] = saga
 
     @classmethod
-    def get_saga(cls, name: str) -> Optional[Callable[[SagaWorker, M], Any]]:
+    def get_saga(cls, name: str) -> Optional[Saga[M, Any]]:
         """
         Получить зарегистрированную функцию саги с именем name.
         """
         return cls._sagas.get(name)
 
     @classmethod
-    def get_saga_name(cls, saga: Callable[[SagaWorker, M], T]) -> str:
+    def get_saga_name(cls, saga: Saga[M, T]) -> str:
         assert hasattr(saga, SAGA_NAME_ATTR), cls._not_a_saga_msg(saga)
         return getattr(saga, SAGA_NAME_ATTR)  # type: ignore[no-any-return]
 
-    def get_saga_record_by_uid(self, idempotent_key: UUID, saga: Callable[[SagaWorker, M], T]) \
+    def get_saga_record_by_uid(self, idempotent_key: UUID, saga: Saga[M, Any]) \
             -> Optional[SagaRecord]:
         """
         Получить запись о состоянии запущенной саги saga, с идемпотентным ключом
@@ -293,12 +292,11 @@ class SagaRunner:
                 f' чтобы отметить функцию как сагу.')
 
 
-def idempotent_saga(name: str) \
-        -> Callable[[Callable[[SagaWorker, M], T]], Callable[[SagaWorker, M], T]]:
+def idempotent_saga(name: str) -> Callable[[Saga[M, T]], Saga[M, T]]:
     """
     Зарегистрировать функцию, как сагу, в `SagaRunner` с именем name.
     """
-    def decorator(f: Callable[[SagaWorker, M], T]) -> Callable[[SagaWorker, M], T]:
+    def decorator(f: Saga[M, T]) -> Saga[M, T]:
         SagaRunner.register_saga(name, f)
         return f
     return decorator
