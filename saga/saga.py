@@ -252,6 +252,9 @@ class SagaRunner:
 
     @classmethod
     def get_saga_name(cls, saga: Saga[M, T]) -> str:
+        """
+        Получить имя зарегистрированной саги saga.
+        """
         assert hasattr(saga, SAGA_NAME_ATTR), cls._not_a_saga_msg(saga)
         return getattr(saga, SAGA_NAME_ATTR)  # type: ignore[no-any-return]
 
