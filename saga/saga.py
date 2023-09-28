@@ -205,9 +205,7 @@ class SagaRunner:
         :param saga: Зарегистрированная функция саги.
         :param data: Входные данные саги.
         """
-        assert hasattr(saga, SAGA_NAME_ATTR), (f'Функция "{saga.__name__}" не является сагой. '
-                                               f'Используйте декоратор "{idempotent_saga.__name__}"'
-                                               f' чтобы отметить функцию как сагу.')
+        assert hasattr(saga, SAGA_NAME_ATTR), self._not_a_saga_msg(saga)
         key = self.join_key(idempotent_key, getattr(saga, SAGA_NAME_ATTR))
         worker = SagaWorker(key, journal=self._worker_journal,
                             compensator=SagaCompensator(),
@@ -253,6 +251,11 @@ class SagaRunner:
         """
         return cls._sagas.get(name)
 
+    @classmethod
+    def get_saga_name(cls, saga: Callable[[SagaWorker, M], T]) -> str:
+        assert hasattr(saga, SAGA_NAME_ATTR), cls._not_a_saga_msg(saga)
+        return getattr(saga, SAGA_NAME_ATTR)  # type: ignore[no-any-return]
+
     @staticmethod
     def join_key(idempotent_key: UUID, saga_name: str) -> str:
         """
@@ -265,6 +268,12 @@ class SagaRunner:
     def _split_key(joined_key: str) -> Tuple[str, str]:
         key, *name = joined_key.split(SAGA_KEY_SEPARATOR)
         return key, ''.join(name)
+
+    @staticmethod
+    def _not_a_saga_msg(f: Callable[..., Any]) -> str:
+        return (f'Функция "{f.__name__}" не является сагой. '
+                f'Используйте декоратор "{idempotent_saga.__name__}"'
+                f' чтобы отметить функцию как сагу.')
 
 
 def idempotent_saga(name: str) \
