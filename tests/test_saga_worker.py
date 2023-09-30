@@ -1,11 +1,12 @@
 import time
+import uuid
 
 import pytest
 
 from saga.events import Event, EventSpec, SagaEvents
 from saga.journal import MemoryJournal
 from saga.models import NotAnEvent, Ok
-from saga.worker import SagaWorker, WorkerJob
+from saga.worker import SagaWorker, WorkerJob, join_key
 
 
 def run_in_worker(x: int) -> str:
@@ -19,9 +20,10 @@ def test_worker_job_create(worker):
 
 def test_worker_journal(compensator):
     journal = MemoryJournal()
-    worker = SagaWorker('1', journal, compensator, None)
+    k = uuid.uuid4()
+    worker = SagaWorker(k, '1', journal, compensator, None)
     worker.job(lambda: 1).run()
-    assert journal.get_record('1_1') is not None
+    assert journal.get_record(f'{join_key(k, "1")}_1') is not None
 
 
 def test_worker_run(worker):
@@ -100,7 +102,7 @@ def test_worker_event_send(worker, communication_fk):
     event_delivered = False
 
     @events.entry(spec)
-    def receiver(_: Ok) -> Ok:
+    def receiver(*args) -> Ok:
         nonlocal event_delivered
         event_delivered = True
         return Ok(ok=10)
