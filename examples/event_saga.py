@@ -1,11 +1,12 @@
 import random
+import tempfile
 import uuid
 
 import redis
 from pydantic import BaseModel
 
-from saga import Event, EventSpec, Ok, RedisCommunicationFactory, SagaEvents, SagaRunner, \
-    SagaWorker, idempotent_saga
+from saga import Event, EventSpec, Ok, SagaEvents, SagaRunner, \
+    SagaWorker, idempotent_saga, SocketCommunicationFactory
 
 
 # shared part
@@ -26,12 +27,12 @@ events = SagaEvents()
 
 
 @events.entry(Ev)
-def ev(data1: Foo) -> Boo:
+def ev(uid: uuid.UUID, data1: Foo) -> Boo:
     return Boo(boo=random.randint(1, 1000))
 
 
 @events.entry(RollEv)
-def roll_ev(x: Foo) -> Ok:
+def roll_ev(uid: uuid.UUID, x: Foo) -> Ok:
     return Ok()
 ##
 
@@ -54,8 +55,7 @@ def saga_2(worker: SagaWorker, _: Ok) -> None:
 if __name__ == '__main__':
     rd = redis.Redis('localhost', 6379, decode_responses=True)
 
-    # fk = SocketCommunicationFactory('foo')
-    cfk = RedisCommunicationFactory(rd)
+    cfk = SocketCommunicationFactory(f'{tempfile.gettempdir()}/test_event.sock')
     cfk.listener(events).run_in_thread()
 
     runner = SagaRunner(cfk=cfk)
