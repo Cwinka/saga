@@ -1,5 +1,6 @@
 import functools
-from typing import Any, Callable, Concatenate, Generic, Optional, ParamSpec, TypeVar
+from typing import Any, Callable, Concatenate, Generic, Optional, ParamSpec, Tuple, TypeVar
+from uuid import UUID
 
 from saga.compensator import SagaCompensator
 from saga.events import EventSender
@@ -11,6 +12,7 @@ P = ParamSpec('P')
 T = TypeVar('T')
 C = TypeVar('C')
 CompensationCallback = Callable[[JobSpec[..., C]], None]
+SAGA_KEY_SEPARATOR = '&'
 
 
 class WorkerJob(Generic[T, C]):
@@ -108,18 +110,20 @@ class SagaWorker:
          worker.compensate()
     """
 
-    def __init__(self, idempotent_key: str, journal: WorkerJournal,
+    def __init__(self, uuid: UUID, saga_name: str, journal: WorkerJournal,
                  compensator: SagaCompensator, sender: Optional[EventSender]):
         """
-        :param idempotent_key: Уникальный ключ `SagaWorker`.
+        :param uuid: Уникальный ключ `SagaWorker`.
+        :param saga_name: Имя саги.
         :param journal: Журнал для хранения результатов выполнения `WorkerJob`.
         :param compensator: Объект `SagaCompensator` хранения компенсационных функций.
         :param sender: Объект `EventSender` для отправки событий,
                        если опущенный метод `event_job` не может быть использован.
         """
-        self._memo = Memoized(idempotent_key, journal)
+        self._uuid = uuid
+        self._idempotent_key = join_key(uuid, saga_name)
+        self._memo = Memoized(self._idempotent_key, journal)
         self._sender = sender
-        self._idempotent_key = idempotent_key
         self._journal = journal
         self._compensate = compensator or SagaCompensator()
         self._no_event_comp: bool = False
@@ -127,9 +131,16 @@ class SagaWorker:
     @property
     def idempotent_key(self) -> str:
         """
-        Уникальный идемпотентный ключ.
+        Уникальный идемпотентный ключ `SagaWorker`.
         """
         return self._idempotent_key
+
+    @property
+    def uuid(self) -> UUID:
+        """
+        Уникальный идентификатор `SagaWorker`.
+        """
+        return self._uuid
 
     def compensate(self) -> None:
         """
@@ -191,6 +202,19 @@ class SagaWorker:
                 self._no_event_comp = True
                 return Ok()  # type: ignore[return-value]
             event.ret_name = f'{self._idempotent_key}_{event.ret_name}'
-            self._sender.send(event)
+            self._sender.send(self._uuid, event)
             return self._sender.wait(event)
         return wrap
+
+
+def join_key(uuid: UUID, saga_name: str) -> str:
+    """
+    Вернуть строку, которую можно использовать для получения объекта
+    `SagaRecord` из `SagaJournal`.
+    """
+    return f'{uuid}{SAGA_KEY_SEPARATOR}{saga_name}'
+
+
+def split_key(joined_key: str) -> Tuple[str, str]:
+    uuid, *name = joined_key.split(SAGA_KEY_SEPARATOR)
+    return uuid, ''.join(name)

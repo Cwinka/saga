@@ -5,7 +5,7 @@ import multiprocessing.pool
 import os
 import traceback
 from collections.abc import Callable
-from typing import Any, Concatenate, Dict, Generic, List, Optional, ParamSpec, Tuple, Type, TypeVar
+from typing import Any, Concatenate, Dict, Generic, List, Optional, ParamSpec, Type, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -14,7 +14,7 @@ from saga.compensator import SagaCompensator
 from saga.events import CommunicationFactory
 from saga.journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
 from saga.models import JobStatus, SagaRecord
-from saga.worker import SagaWorker
+from saga.worker import SagaWorker, join_key, split_key
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -196,18 +196,17 @@ class SagaRunner:
         self._model_to_b = model_to_b
         self._model_from_b = model_from_b
 
-    def new(self, idempotent_key: UUID, saga: Saga[M, T], data: M) -> SagaJob[T]:
+    def new(self, uuid: UUID, saga: Saga[M, T], data: M) -> SagaJob[T]:
         """
         Создать новый объект `SagaJob`.
 
-        :param idempotent_key: Уникальный ключ саги.
+        :param uuid: Уникальный ключ саги.
         :param saga: Зарегистрированная функция саги.
         :param data: Входные данные саги.
         """
         assert hasattr(saga, SAGA_NAME_ATTR), self._not_a_saga_msg(saga)
-        key = self.join_key(idempotent_key, getattr(saga, SAGA_NAME_ATTR))
-        worker = SagaWorker(key, journal=self._worker_journal,
-                            compensator=SagaCompensator(),
+        worker = SagaWorker(uuid=uuid, saga_name=getattr(saga, SAGA_NAME_ATTR),
+                            journal=self._worker_journal, compensator=SagaCompensator(),
                             sender=self._cfk.sender() if self._cfk is not None else None,)
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
                        model_to_b=self._model_to_b)
@@ -219,8 +218,8 @@ class SagaRunner:
         """
         i = 0
         for i, saga in enumerate(self._saga_journal.get_incomplete_saga(), 1):
-            idempotent_key, saga_name = self._split_key(saga.idempotent_key)
-            saga_f = self.get_saga(saga_name)
+            idempotent_key, saga_name = split_key(saga.idempotent_key)
+            saga_f = self.get_saga(saga_name)  # type: ignore[var-annotated]
             if saga_f is None:
                 # FIXME: warning, сагу переименовали, но было найдено старое имя в базе
                 pass
@@ -264,7 +263,7 @@ class SagaRunner:
         Получить запись о состоянии запущенной саги saga, с идемпотентным ключом
         idempotent_key.
         """
-        key = self.join_key(idempotent_key, self.get_saga_name(saga))
+        key = join_key(idempotent_key, self.get_saga_name(saga))
         return self._saga_journal.get_saga(key)
 
     def get_saga_record_by_wkey(self, worker_idempotent_key: str) -> Optional[SagaRecord]:
@@ -274,19 +273,6 @@ class SagaRunner:
         :param worker_idempotent_key: Идемпотентный ключ SagaWorker.
         """
         return self._saga_journal.get_saga(worker_idempotent_key)
-
-    @staticmethod
-    def join_key(idempotent_key: UUID, saga_name: str) -> str:
-        """
-        Вернуть строку, которую можно использовать для получения объекта
-        `SagaRecord` из `SagaJournal`.
-        """
-        return f'{idempotent_key}{SAGA_KEY_SEPARATOR}{saga_name}'
-
-    @staticmethod
-    def _split_key(joined_key: str) -> Tuple[str, str]:
-        key, *name = joined_key.split(SAGA_KEY_SEPARATOR)
-        return key, ''.join(name)
 
     @staticmethod
     def _not_a_saga_msg(f: Callable[..., Any]) -> str:
