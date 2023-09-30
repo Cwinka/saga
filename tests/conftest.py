@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from saga.compensator import SagaCompensator
@@ -30,8 +32,8 @@ def communication_fk(tmp_path) -> CommunicationFactory:
 
 @pytest.fixture()
 def worker(communication_fk, wk_journal, compensator) -> SagaWorker:
-    return SagaWorker('1', journal=wk_journal, compensator=compensator,
-                      sender=communication_fk.sender())
+    return SagaWorker(uuid.uuid4(), 'foo', journal=wk_journal,
+                      compensator=compensator, sender=communication_fk.sender())
 
 
 @pytest.fixture()

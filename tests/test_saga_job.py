@@ -1,4 +1,5 @@
 import random
+import uuid
 
 import pytest
 
@@ -40,8 +41,9 @@ def test_saga_job_idempotent(saga_journal, wk_journal, compensator, forget_done,
             s += worker.job(random.randint, 0, 1000).run()
         return s
 
-    wk1 = SagaWorker('1', wk_journal, compensator, None)
-    wk2 = SagaWorker('1', wk_journal, compensator, None)
+    uid = uuid.uuid4()
+    wk1 = SagaWorker(uid, '1', wk_journal, compensator, None)
+    wk2 = SagaWorker(uid, '1', wk_journal, compensator, None)
 
     result1 = SagaJob(saga_journal, wk1, sum_return, Ok(), forget_done=forget_done).wait()
     result2 = SagaJob(saga_journal, wk2, sum_return, Ok()).wait()

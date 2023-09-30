@@ -5,7 +5,7 @@ import pytest
 
 from saga.models import JobStatus, Ok, SagaRecord
 from saga.saga import SagaJob, SagaRunner, idempotent_saga
-from saga.worker import SagaWorker
+from saga.worker import SagaWorker, join_key
 
 
 @idempotent_saga('foo')
@@ -42,7 +42,7 @@ def test_saga_runner_rerun_0(runner):
 
 
 def test_saga_runner_rerun_1(saga_journal):
-    id_key = SagaRunner.join_key(uuid.uuid4(), 'foo')
+    id_key = join_key(uuid.uuid4(), 'foo')
     saga_journal.create_saga(id_key)
     saga_journal.update_saga(id_key, ['status'], [JobStatus.RUNNING])
 

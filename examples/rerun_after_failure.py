@@ -1,11 +1,9 @@
-import os
-import tempfile
 import time
-from pathlib import Path
+import uuid
 
-from pydantic import BaseModel
-
-from saga import SagaRunner, SagaWorker, idempotent_saga, Ok, MemorySagaJournal, JobStatus
+from saga import JobStatus, MemorySagaJournal, Ok, SagaRunner, SagaWorker, idempotent_saga
+from saga.saga import model_to_initial_data
+from saga.worker import join_key
 
 
 @idempotent_saga('saga')
@@ -20,8 +18,10 @@ def main() -> None:
 
     # Симуляция незавершенной саги, которая могла возникнуть после неожиданного
     # завершения программы
-    saga = journal.create_saga(SagaRunner.join_key('1', 'saga'))
-    saga.initial_data = Ok().model_dump_json().encode('utf8')
+    saga = journal.create_saga(
+        join_key(uuid.uuid4(), SagaRunner.get_saga_name(saga_1))
+    )
+    saga.initial_data = model_to_initial_data(Ok())
     saga.status = JobStatus.RUNNING
 
     assert runner.run_incomplete() == 1  # Будет запущена saga_1
