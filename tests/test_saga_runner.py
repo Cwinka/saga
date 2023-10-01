@@ -1,3 +1,4 @@
+import random
 import uuid
 from typing import Optional
 
@@ -100,3 +101,23 @@ def test_get_saga_record_by_wkey(runner):
     result = runner.new(key, saga, Ok()).wait()
 
     assert isinstance(result, SagaRecord)
+
+
+def test_new_saga_from_record_fail(runner, saga_journal):
+    @idempotent_saga('saga')
+    def saga(worker: SagaWorker, _):
+        return None
+
+    assert runner.new_from(uuid.uuid4(), saga) is None
+
+
+def test_new_saga_from_record(runner, saga_journal):
+    @idempotent_saga('saga')
+    def saga(worker: SagaWorker, _: Ok) -> int:
+        return worker.job(random.randint, 0, 1000).run()
+
+    key = uuid.uuid4()
+    r = runner.new(key, saga, Ok()).wait()
+    r2 = runner.new_from(key, saga).wait()
+    assert r == r2, (f'Запуск саги методом {SagaRunner.new_from.__name__} должен вернуть тот же '
+                     f'результат.')

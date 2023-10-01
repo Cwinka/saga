@@ -1,6 +1,7 @@
 import base64
 import datetime
 import functools
+import inspect
 import multiprocessing.pool
 import os
 import traceback
@@ -211,6 +212,19 @@ class SagaRunner:
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
                        model_to_b=self._model_to_b)
 
+    def new_from(self, uuid: UUID, saga: Saga[M, T]) -> Optional[SagaJob[T]]:
+        """
+        Создать экземпляр SagaJob по существующей записи SagaRecord. Существующая запись SagaRecord
+        говорит о том, что сага была запущена ранее, и может находиться в любом состоянии.
+        """
+        saga_name = self.get_saga_name(saga)
+        saga_f: Callable[[SagaWorker, M], T] = self.get_saga(saga_name)
+        record = self._saga_journal.get_saga(join_key(uuid, saga_name))
+        if record is None:
+            return None
+        model = self._model_from_saga_f(saga_f)
+        return self.new(uuid, saga_f, model_from_initial_data(model, record.initial_data))
+
     def run_incomplete(self) -> int:
         """
         Запустить все незавершенные саги. Возвращает количество запущенных саг. Не блокирует
@@ -219,20 +233,22 @@ class SagaRunner:
         i = 0
         for i, saga in enumerate(self._saga_journal.get_incomplete_saga(), 1):
             idempotent_key, saga_name = split_key(saga.idempotent_key)
-            saga_f = self.get_saga(saga_name)  # type: ignore[var-annotated]
-            if saga_f is None:
-                # FIXME: warning, сагу переименовали, но было найдено старое имя в базе
-                pass
-            else:
-                model: Type[BaseModel] = list(saga_f.__annotations__.values())[1]
-                assert not isinstance(model, str), ('Используйте явную аннотацию типа данных саги '
-                                                    f'"{saga_f.__name__}", без '
-                                                    'оборачивания его в строку.')
-                self.new(
-                    UUID(idempotent_key), saga_f,
-                    self._model_from_b(model, saga.initial_data)  # type: ignore[arg-type]
-                ).run()
+            saga_f: Callable[[SagaWorker, M], Any] = self.get_saga(saga_name)
+            model = self._model_from_saga_f(saga_f)
+            self.new(
+                UUID(idempotent_key), saga_f, self._model_from_b(model, saga.initial_data)
+            ).run()
         return i
+
+    @staticmethod
+    def _model_from_saga_f(saga_f: Callable[[SagaWorker, M], Any]) -> Type[M]:
+        data_arg = inspect.getfullargspec(saga_f).args[1]
+        model: Type[M] = saga_f.__annotations__.get(data_arg)  # type: ignore[assignment]
+        assert not isinstance(model, str), ('Используйте явную аннотацию типа данных саги '
+                                            f'"{saga_f.__name__}", без '
+                                            'оборачивания его в строку.')
+        assert model is not None, f'Модель данных саги "{saga_f.__name__}" не может быть None.'
+        return model
 
     @classmethod
     def register_saga(cls, name: str, saga: Saga[M, Any]) -> None:
@@ -243,11 +259,15 @@ class SagaRunner:
         cls._sagas[name] = saga
 
     @classmethod
-    def get_saga(cls, name: str) -> Optional[Saga[M, Any]]:
+    def get_saga(cls, name: str) -> Saga[M, Any]:
         """
         Получить зарегистрированную функцию саги с именем name.
         """
-        return cls._sagas.get(name)
+        saga = cls._sagas.get(name)
+        assert saga is not None, (f'Сага "{name}" не найдена. Возможно: сагу переименовали, '
+                                  f'но в базе данных осталось старое имя саги; сага '
+                                  f'"{name}" не была запущена; сага "{name}" не зарегистрирована.')
+        return saga
 
     @classmethod
     def get_saga_name(cls, saga: Saga[M, T]) -> str:
