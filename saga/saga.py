@@ -39,7 +39,7 @@ def model_from_initial_data(model: Type[M], data: bytes) -> M:
     return model.model_validate_json(base64.b64decode(data).decode('utf8'))
 
 
-class SagaJob(Generic[T]):
+class SagaJob(Generic[T, M]):
     """
     `SagaJob` - обертка для функции саги, которая позволяет сохранять состояние выполнения функции.
 
@@ -81,6 +81,10 @@ class SagaJob(Generic[T]):
         self._data = data
         self._model_to_b = model_to_b
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
+
+    @property
+    def data(self) -> M:
+        return self._data
 
     def run(self) -> None:
         """
@@ -197,7 +201,7 @@ class SagaRunner:
         self._model_to_b = model_to_b
         self._model_from_b = model_from_b
 
-    def new(self, uuid: UUID, saga: Saga[M, T], data: M) -> SagaJob[T]:
+    def new(self, uuid: UUID, saga: Saga[M, T], data: M) -> SagaJob[T, M]:
         """
         Создать новый объект `SagaJob`.
 
@@ -212,7 +216,7 @@ class SagaRunner:
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
                        model_to_b=self._model_to_b)
 
-    def new_from(self, uuid: UUID, saga: Saga[M, T]) -> Optional[SagaJob[T]]:
+    def new_from(self, uuid: UUID, saga: Saga[M, T]) -> Optional[SagaJob[T, M]]:
         """
         Создать экземпляр SagaJob по существующей записи SagaRecord. Существующая запись SagaRecord
         говорит о том, что сага была запущена ранее, и может находиться в любом состоянии.
