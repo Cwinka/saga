@@ -51,7 +51,7 @@ class JobRecord(BaseModel):
     """ Текущий статус операции. """
     result: bytes = base64.b64encode(pickle.dumps(None))
     """ Результат операции. """
-    runs: int = 0
+    runs: int = 1
     """ Количество запусков. """
 
 
