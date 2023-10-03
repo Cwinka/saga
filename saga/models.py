@@ -57,22 +57,13 @@ class JobRecord(BaseModel):
 
 class JobSpec(Generic[T]):
     """
-    Спецификация функции.
+    Спецификация функции. Аналог функции `functools.partial`.
     """
     def __init__(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
         self.f = f
         self._orig_args = args
         self._args: List[Any] = []
         self._orig_kwargs = kwargs
-
-    def with_arg(self, arg: Any) -> 'JobSpec[T]':
-        """
-        Добавляет аргумент `arg` в качестве первого аргумента основной функции.
-        Метод следует использовать с осторожностью, так как он не проверяет, может ли основная
-        функция принят аргумент `arg`.
-        """
-        self._args.insert(0, arg)
-        return self
 
     def call(self) -> T:
         """

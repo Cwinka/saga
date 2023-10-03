@@ -43,13 +43,9 @@ class WorkerJob(Generic[T, C]):
     def __init__(self, spec: JobSpec[T],
                  comp_set_callback: CompensationCallback[C] = lambda *_: None) -> None:
         """
-        :param spec: A function specification.
-        :param comp_set_callback: Compensation callback that is called when a function in spec is
-                                  executed and a compensation function is set to the job.
-
         :param spec: Спецификация функции.
-        :param comp_set_callback: Обратный вызов компенсации, вызывается, когда spec выполнена,
-                                  и установлена функция компенсации.
+        :param comp_set_callback: Обратный вызов компенсации, вызывается перед выполнением spec
+                                  и если установлена функция компенсации.
         """
         self._spec = spec
         self._compensation_callback = comp_set_callback
@@ -59,33 +55,29 @@ class WorkerJob(Generic[T, C]):
 
     def run(self) -> T:
         """
-        Запускает spec функцию. Этот метод можно выполнить только один раз.
+        Выполнить spec функцию. Метод можно выполнить только один раз.
 
         :return: Результат spec функции.
         """
         assert not self._run, 'Повторный вызов функции не позволен.'
-        r = self._spec.call()
-        self._run = True
         if self._compensation_spec:
-            self._compensation_callback(self._compensation_spec.with_arg(r))
-        return r
+            self._compensation_callback(self._compensation_spec)
+        self._run = True
+        return self._spec.call()
 
-    def with_compensation(self, f: Callable[Concatenate[T, P], C], *args: P.args,
-                          **kwargs: P.kwargs) -> 'WorkerJob[T, C]':
+    def with_compensation(self, spec: JobSpec[C]) -> 'WorkerJob[T, C]':
         """
-        Добавляет функцию компенсации.
+        Установить функцию компенсации.
 
-        :param f: Функция компенсации. Первый аргумент всегда является результатом spec функции.
-        :param args: Любые аргументы для передачи в функцию f.
-        :param kwargs: Любые ключевые аргументы для передачи в функцию f.
+        :param spec: Спецификации компенсационной функции.
         :return: Тот же объект `WorkerJob`.
         """
-        self._compensation_spec = JobSpec(f, *args, **kwargs)
+        self._compensation_spec = spec
         return self
 
     def compensate(self) -> None:
         """
-        Запускает компенсацию, если она существует. Этот метод можно выполнить только один раз.
+        Запустить компенсацию, если она существует. Метод можно выполнить только один раз.
         """
         assert self._run, 'Функция не была вызвана. Нечего компенсировать.'
         assert not self._crun, 'Повторный вызов компенсационной функции не позволен.'
@@ -95,10 +87,6 @@ class WorkerJob(Generic[T, C]):
 
 class SagaWorker:
     """
-    A SagaWorker is responsible for creating jobs (WorkerJob) inside saga function.
-    SagaWorker creates execution control points on every job created and run and also collects
-    all compensations that has been linked to jobs to run all of them on exception.
-
     `SagaWorker` отвечает за создание `WorkerJob`.
     `SagaWorker` создает точки сохранения для каждого запускаемого `WorkerJob`,
      а также собирает все компенсации, которые были в них добавлены.
