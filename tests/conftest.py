@@ -28,7 +28,8 @@ def compensator() -> SagaCompensator:
 
 @pytest.fixture()
 def communication_fk() -> CommunicationFactory:
-    return RedisCommunicationFactory(redis.Redis('127.0.0.1', 6379))
+    return RedisCommunicationFactory(redis.Redis('127.0.0.1', 6379,
+                                                 decode_responses=True))
 
 
 @pytest.fixture()
