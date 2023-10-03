@@ -161,27 +161,29 @@ class SagaWorker:
 
         :param spec: Спецификация функции.
         :param retries: Количество возможных повторов функции в случае исключения. Если
-                количество повторов 0, тогда будет поднято оригинальное исключение.
+                        количество повторов 0, тогда будет поднято оригинальное исключение.
         :param retry_interval: Интервал времени в секундах, через который будет вызван повтор
                                функции в случае исключения.
         """
         spec.f = self._memo.memoize(spec.f, retries=retries, retry_interval=retry_interval)
         return WorkerJob[T, None](spec, comp_set_callback=self._place_compensation)
 
-    def event_job(self, f: Callable[P, Event[In, Out]], *args: P.args,
-                  **kwargs: P.kwargs) -> WorkerJob[Out, Event[Any, Any]]:
+    def event_job(self, spec: JobSpec[Event[In, Out]], retries: int = 1,
+                  retry_interval: float = 2.0) -> WorkerJob[Out, Event[Any, Any]]:
         """
         Создать `WorkerJob`, который отправляет возвращаемое событие и ожидает его результат.
 
-        :param f: Функция, возвращающая событие.
-        :param args: Любые аргументы для передачи в функцию f.
-        :param kwargs: Любые ключевые аргументы для передачи в функцию f.
+        :param spec: Спецификация функции.
+        :param retries: Количество возможных повторов функции в случае исключения. Если
+                        количество повторов 0, тогда будет поднято оригинальное исключение.
+        :param retry_interval: Интервал времени в секундах, через который будет вызван повтор
+                               функции в случае исключения.
         """
         assert self._sender is not None, 'Не установлен отправитель событий.'
-        return WorkerJob[Out, Event[Any, Any]](
-            JobSpec(self._memo.memoize(self._auto_send(f)), *args, **kwargs),
-            comp_set_callback=self._place_event_compensation
-        )
+        spec.f = self._memo.memoize(self._auto_send(spec.f),  # type: ignore[arg-type]
+                                    retries=retries, retry_interval=retry_interval)
+        return WorkerJob[Out, Event[Any, Any]](spec,  # type: ignore[arg-type]
+                                               comp_set_callback=self._place_event_compensation)
 
     def _place_event_compensation(self, spec: JobSpec[Event[In, Ok]]) -> None:
         if self._no_event_comp:
