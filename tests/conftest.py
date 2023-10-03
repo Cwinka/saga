@@ -3,10 +3,11 @@ import uuid
 import pytest
 
 from saga.compensator import SagaCompensator
+from saga.events import SocketCommunicationFactory, CommunicationFactory
 from saga.journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
+from saga.memo import Memoized
 from saga.saga import SagaRunner
 from saga.worker import SagaWorker
-from saga.events import SocketCommunicationFactory, CommunicationFactory
 
 
 @pytest.fixture()
@@ -39,3 +40,8 @@ def worker(communication_fk, wk_journal, compensator) -> SagaWorker:
 @pytest.fixture()
 def runner(saga_journal, wk_journal) -> SagaRunner:
     return SagaRunner(saga_journal, wk_journal)
+
+
+@pytest.fixture()
+def memoized(wk_journal) -> Memoized:
+    return Memoized('memo', wk_journal)
