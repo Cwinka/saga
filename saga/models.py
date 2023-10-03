@@ -55,7 +55,7 @@ class JobRecord(BaseModel):
     """ Количество запусков. """
 
 
-class JobSpec(Generic[P, T]):
+class JobSpec(Generic[T]):
     """
     Спецификация функции.
     """
@@ -65,7 +65,7 @@ class JobSpec(Generic[P, T]):
         self._args: List[Any] = []
         self._orig_kwargs = kwargs
 
-    def with_arg(self, arg: Any) -> 'JobSpec[P, T]':
+    def with_arg(self, arg: Any) -> 'JobSpec[T]':
         """
         Добавляет аргумент `arg` в качестве первого аргумента основной функции.
         Метод следует использовать с осторожностью, так как он не проверяет, может ли основная

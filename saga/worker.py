@@ -11,7 +11,7 @@ from saga.models import Event, In, JobSpec, NotAnEvent, Ok, Out
 P = ParamSpec('P')
 T = TypeVar('T')
 C = TypeVar('C')
-CompensationCallback = Callable[[JobSpec[..., C]], None]
+CompensationCallback = Callable[[JobSpec[C]], None]
 SAGA_KEY_SEPARATOR = '&'
 
 
@@ -40,7 +40,7 @@ class WorkerJob(Generic[T, C]):
         job.compensate()
     """
 
-    def __init__(self, spec: JobSpec[..., T],
+    def __init__(self, spec: JobSpec[T],
                  comp_set_callback: CompensationCallback[C] = lambda *_: None) -> None:
         """
         :param spec: A function specification.
@@ -53,7 +53,7 @@ class WorkerJob(Generic[T, C]):
         """
         self._spec = spec
         self._compensation_callback = comp_set_callback
-        self._compensation_spec: Optional[JobSpec[..., C]] = None
+        self._compensation_spec: Optional[JobSpec[C]] = None
         self._run: bool = False
         self._crun: bool = False
 
@@ -154,7 +154,7 @@ class SagaWorker:
         """
         self._memo.forget_done()
 
-    def job(self, spec: JobSpec[P, T], retries: int = 1, retry_interval: float = 2.0)\
+    def job(self, spec: JobSpec[T], retries: int = 1, retry_interval: float = 2.0)\
             -> WorkerJob[T, None]:
         """
         Создать `WorkerJob` со спецификацией `spec`.
@@ -183,14 +183,14 @@ class SagaWorker:
             comp_set_callback=self._place_event_compensation
         )
 
-    def _place_event_compensation(self, spec: JobSpec[..., Event[In, Ok]]) -> None:
+    def _place_event_compensation(self, spec: JobSpec[Event[In, Ok]]) -> None:
         if self._no_event_comp:
             self._no_event_comp = False
             return
         spec.f = self._memo.memoize(self._auto_send(spec.f))  # type: ignore[arg-type]
         self._compensate.add_compensate(spec)
 
-    def _place_compensation(self, spec: JobSpec[..., None]) -> None:
+    def _place_compensation(self, spec: JobSpec[None]) -> None:
         spec.f = self._memo.memoize(spec.f)
         self._compensate.add_compensate(spec)
 
