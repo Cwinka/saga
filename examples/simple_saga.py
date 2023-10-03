@@ -6,6 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from saga import SagaRunner, SagaWorker, idempotent_saga
+from saga.models import JobSpec
 
 
 class SpecData(BaseModel):
@@ -16,12 +17,14 @@ class SpecData(BaseModel):
 def create_spec_in_directory(worker: SagaWorker, data: SpecData) -> None:
     for i in range(10):
         file = data.path / str(i)
-        worker.job(create_spec_file, file, 'foo').with_compensation(remove_spec_file, file).run()
+        worker.job(JobSpec(create_spec_file, file, 'foo'), retries=1)\
+            .with_compensation(remove_spec_file, file).run()
     raise AttributeError
 
 
 def create_spec_file(file: Path, content: str) -> None:
     print(f'Writing file {file}')
+    raise
     with open(file, 'w') as f:
         f.write(content)
 
@@ -33,7 +36,7 @@ def remove_spec_file(_: None, file: Path) -> None:
 
 def main() -> None:
     path = Path(tempfile.gettempdir()) / 'foo'
-    path.mkdir()
+    path.mkdir(exist_ok=True)
 
     runner = SagaRunner()
     try:

@@ -6,7 +6,7 @@ import redis
 from pydantic import BaseModel
 
 from saga import Event, EventSpec, Ok, SagaEvents, SagaRunner, \
-    SagaWorker, idempotent_saga, SocketCommunicationFactory
+    SagaWorker, idempotent_saga, SocketCommunicationFactory, JobSpec
 
 
 # shared part
@@ -48,8 +48,8 @@ def roll_event(x: Boo) -> Event[Foo, Ok]:
 
 @idempotent_saga('saga')
 def saga_2(worker: SagaWorker, _: Ok) -> None:
-    e = worker.event_job(event).with_compensation(roll_event).run()
-    print(worker.job(lambda x: random.randint(1, 1000) + x.boo, e).run())
+    e = worker.event_job(JobSpec(event)).with_compensation(roll_event).run()
+    print(worker.job(JobSpec(lambda x: random.randint(1, 1000) + x.boo, e)).run())
 
 
 if __name__ == '__main__':

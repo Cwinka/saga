@@ -2,7 +2,7 @@ import uuid
 
 from pydantic import BaseModel
 
-from saga import SagaRunner, SagaWorker, idempotent_saga
+from saga import SagaRunner, SagaWorker, idempotent_saga, JobSpec
 
 
 class DataForFirst(BaseModel):
@@ -16,7 +16,7 @@ class DataForSecond(BaseModel):
 @idempotent_saga('first')
 def first_saga(worker: SagaWorker, data: DataForFirst) -> None:
     for _ in range(data.count):
-        worker.job(lambda: print('Some work')).run()
+        worker.job(JobSpec(lambda: print('Some work'))).run()
     if data.count > 5:
         # Будет запущена `second_saga`, используя текущего `SagaWorker`.
         # Все шаги в запущенной саге будут сохраняться аналогично, как и в этой.
@@ -29,7 +29,7 @@ def first_saga(worker: SagaWorker, data: DataForFirst) -> None:
 @idempotent_saga('second')
 def second_saga(worker: SagaWorker, data: DataForSecond) -> None:
     for _ in range(data.times):
-        worker.job(lambda: print('Some other work')).run()
+        worker.job(JobSpec(lambda: print('Some other work'))).run()
 
 
 def main() -> None:
