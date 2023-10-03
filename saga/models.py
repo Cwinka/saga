@@ -76,20 +76,16 @@ class Event(Generic[In, Out]):
     """
     Событие, цель которого маршрутизация и хранение данных для передачи на удаленный хост.
     """
-    def __init__(self, name: str, rt_name: str, data: In, model_in: Type[In],
-                 model_out: Type[Out]):
+
+    def __init__(self, name: str, data: In, model_out: Type[Out]):
         """
-        :param name: Event name.
-        :param rt_name: Returning event name.
-        :param data: Instance of input data.
-        :param model_in: Input model of event.
-        :param model_out: Output model of event.
+        :param name: Имя события.
+        :param data: Входные данные события.
+        :param model_out: Тип данных, возвращаемых событием.
         """
         self.name = name
         self.data = data
-        self.model_in = model_in
         self.model_out = model_out
-        self.ret_name = rt_name
 
 
 class EventSpec(Generic[In, Out]):
@@ -120,13 +116,12 @@ class EventSpec(Generic[In, Out]):
         self.name = name
         self.model_in = model_in
         self.model_out = model_out
-        self.ret_name = f'r_{name}'
 
     def make(self, inp: In) -> Event[In, Out]:
         """
         Создает аннотированные `Event` с данными `inp`.
         """
-        return Event(self.name, self.ret_name, inp, self.model_in, self.model_out)
+        return Event(self.name, inp, self.model_out)
 
 
 class NotAnEvent(Event[Ok, Ok]):
@@ -145,5 +140,4 @@ class NotAnEvent(Event[Ok, Ok]):
             return Event(...)
     """
     def __init__(self) -> None:
-        super().__init__('not_an_event', 'r_not_an_event', data=Ok(),
-                         model_in=Ok, model_out=Ok)
+        super().__init__('not_an_event', data=Ok(), model_out=Ok)

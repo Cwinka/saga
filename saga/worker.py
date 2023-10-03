@@ -187,9 +187,8 @@ class SagaWorker:
             event = f(*args, **kwargs)
             if isinstance(event, NotAnEvent):
                 return Ok()  # type: ignore[return-value]
-            event.ret_name = f'{self._idempotent_key}_{event.ret_name}'
             self._sender.send(self._uuid, event)
-            return self._sender.wait(event)
+            return self._sender.wait(self._uuid, event)
         return wrap
 
 

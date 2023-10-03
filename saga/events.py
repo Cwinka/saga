@@ -29,7 +29,7 @@ class EventSender(ABC):
         """
 
     @abstractmethod
-    def wait(self, event: Event[Any, Out]) -> Out:
+    def wait(self, uuid: UUID, event: Event[Any, Out]) -> Out:
         """
         Подождать результат события.
         Метод может быть использован только в том случае, если событие было отправлено.
@@ -132,13 +132,13 @@ class SocketEventSender(EventSender):
         self._sock = None
 
     def send(self, uuid: UUID, event: Event[Any, Any]) -> None:
-        data = {'event': event.name, 'return': event.ret_name,
-                'model': event.data.model_dump_json(), 'uuid': str(uuid)}
+        data = {'event': event.name, 'model': event.data.model_dump_json(),
+                'uuid': str(uuid)}
         self._connect()
         assert self._sock is not None
         self._sock.send(json.dumps(data).encode('utf8'))
 
-    def wait(self, event: Event[Any, Out]) -> Out:
+    def wait(self, uuid: UUID, event: Event[Any, Out]) -> Out:
         assert self._sock is not None, 'Данные не были отправлены.'
         data = self._sock.recv(1024)
         self._disconnect()
@@ -178,18 +178,19 @@ class RedisEventSender(EventSender):
         self._rd = rd
 
     def send(self, uuid: UUID, event: Event[Any, Any]) -> None:
-        self._rd.xadd(event.name, {'return': event.ret_name,
+        self._rd.xadd(event.name, {'return': f'{uuid}${event.name}',
                                    'model': event.data.model_dump_json(),
                                    'uuid': str(uuid)})
 
-    def wait(self, event: Event[Any, Out]) -> Out:
+    def wait(self, uuid: UUID, event: Event[Any, Out]) -> Out:
         while True:
-            for channel, messages in self._rd.xread({event.ret_name: '0'}, 1,
+            return_channel = f'{uuid}${event.name}'
+            for channel, messages in self._rd.xread({return_channel: '0'}, 1,
                                                     block=1000):
                 for _id, payload in messages:
                     self._rd.xdel(channel, _id)
                     return event.model_out.model_validate_json(payload['model'])
-            self._rd.delete(event.ret_name)
+            self._rd.delete(return_channel)
 
 
 class RedisEventListener(EventListener):
