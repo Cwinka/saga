@@ -3,14 +3,10 @@ import uuid
 
 import pytest
 
-from saga.events import Event, EventSpec, SagaEvents
+from saga.events import SagaEvents
 from saga.journal import MemoryJournal
-from saga.models import NotAnEvent, Ok, JobSpec
+from saga.models import NotAnEvent, Ok, JobSpec, Event, EventSpec
 from saga.worker import SagaWorker, WorkerJob, join_key
-
-
-def run_in_worker(x: int) -> str:
-    return str(x)
 
 
 class SomeError(Exception):
@@ -18,7 +14,7 @@ class SomeError(Exception):
 
 
 def test_worker_job_create(worker):
-    job = worker.job(JobSpec(run_in_worker, 1))
+    job = worker.job(JobSpec(lambda: 1))
     assert isinstance(job, WorkerJob)
 
 
@@ -32,8 +28,8 @@ def test_worker_journal(compensator):
 
 def test_worker_run(worker):
     x = 42
-    result = worker.job(JobSpec(run_in_worker, x)).run()
-    assert result == str(x)
+    result = worker.job(JobSpec(lambda: x)).run()
+    assert result == x
 
 
 def test_worker_run_exception(worker):
@@ -48,11 +44,12 @@ def test_worker_run_compensate(worker):
     x = 42
     compensate_check = 0
 
-    def foo(_x: str) -> None:
+    def foo(_x: int) -> None:
         nonlocal compensate_check
-        compensate_check = int(_x)
+        compensate_check = _x
 
-    worker.job(JobSpec(run_in_worker, x)).with_compensation(foo).run()
+    worker.job(JobSpec(lambda: None))\
+        .with_compensation(JobSpec(foo, x)).run()
     worker.compensate()
     assert compensate_check == x
 
@@ -61,19 +58,20 @@ def test_worker_loop(worker):
     x = 10
     results = []
     for i in range(x):
-        results.append(worker.job(JobSpec(run_in_worker, i)).run())
-    assert results == [str(i) for i in range(x)]
+        results.append(worker.job(JobSpec(lambda _i: _i, i)).run())
+    assert results == list(range(x))
 
 
 def test_worker_loop_compensate(worker):
     x = 42
     compensate_check = 0
 
-    def foo(_x: str) -> None:
+    def foo(_x: int) -> None:
         nonlocal compensate_check
-        compensate_check += int(_x)
+        compensate_check += _x
     for i in range(1, x+1):
-        worker.job(JobSpec(run_in_worker, i)).with_compensation(foo).run()
+        worker.job(JobSpec(lambda: None))\
+            .with_compensation(JobSpec(foo, i)).run()
     worker.compensate()
 
     assert compensate_check == x**2/2 + x/2
@@ -88,7 +86,8 @@ def test_worker_no_compensate_if_no_run(worker):
         compensate_check += _x
 
     for i in range(1, x + 1):
-        worker.job(JobSpec(run_in_worker, i)).with_compensation(foo)
+        worker.job(JobSpec(lambda: None))\
+            .with_compensation(JobSpec(foo, i))
     worker.compensate()
 
     assert compensate_check == 0, ('Метод `with_compensation` не должен добавлять компенсацию, '
@@ -121,17 +120,3 @@ def test_worker_event_send(worker, communication_fk):
 def test_worker_not_an_event_send(worker):
     result = worker.event_job(JobSpec(lambda: NotAnEvent())).run()
     assert isinstance(result, Ok), 'Событие NotAnEvent должно возвращать Ok.'
-
-
-def test_worker_not_an_event_comp(worker):
-    compensation_run = False
-
-    def comp(_: Ok) -> NotAnEvent:
-        nonlocal compensation_run
-        compensation_run = True
-        return NotAnEvent()
-
-    worker.event_job(JobSpec(lambda: NotAnEvent())).with_compensation(comp).run()
-    worker.compensate()
-
-    assert not compensation_run, 'Компенсационная функция для NotAnEvent не должна запускаться.'

@@ -68,7 +68,8 @@ def test_saga_job_compensation(worker, saga_journal):
         for i in range(1, x+1):
             if i == x:
                 raise SomeError
-            _worker.job(JobSpec(lambda: i)).with_compensation(compensate).run()
+            _worker.job(JobSpec(lambda _x: _x, i))\
+                .with_compensation(JobSpec(compensate, i)).run()
 
     job = SagaJob(saga_journal, worker, function, Ok())
 

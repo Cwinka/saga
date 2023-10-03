@@ -8,23 +8,18 @@ class SpecialErr(Exception):
     pass
 
 
-def run_in_job(x: int) -> str:
-    return str(x)
-
-
-def run_in_job_with_raise() -> str:
-    raise SpecialErr()
-
-
 def test_worker_job_run():
     x = 42
 
-    job = WorkerJob(JobSpec(run_in_job, x))
+    job = WorkerJob(JobSpec(lambda _x: _x, x))
     result = job.run()
-    assert result == str(x)
+    assert result == x
 
 
 def test_worker_job_err():
+    def run_in_job_with_raise() -> str:
+        raise SpecialErr()
+
     with pytest.raises(SpecialErr):
         WorkerJob(JobSpec(run_in_job_with_raise)).run()
 
@@ -33,12 +28,12 @@ def test_worker_job_with_compensation():
     compensate_check = 0
     x = 42
 
-    def foo(_x: str) -> None:
+    def foo(_x: int) -> None:
         nonlocal compensate_check
-        compensate_check = int(_x)
+        compensate_check = _x
 
-    job1 = WorkerJob(JobSpec(run_in_job, x))
-    job1.with_compensation(foo).run()
+    job1 = WorkerJob(JobSpec(lambda: 1))
+    job1.with_compensation(JobSpec(foo, x)).run()
     job1.compensate()
     assert compensate_check == x, 'Компенсационная функция не была запущена.'
 
@@ -47,13 +42,13 @@ def test_worker_job_with_multiple_compensations():
     compensate_check = 0
     x = 42
 
-    def foo(_x: str) -> None:
+    def foo(_x: int) -> None:
         nonlocal compensate_check
-        compensate_check += int(_x)
+        compensate_check += _x
 
     def job_with_compensation() -> None:
-        job1 = WorkerJob(JobSpec(run_in_job, x))
-        job1.with_compensation(foo).run()
+        job1 = WorkerJob(JobSpec(lambda: 1))
+        job1.with_compensation(JobSpec(foo, x)).run()
         job1.compensate()
 
     job_with_compensation()
