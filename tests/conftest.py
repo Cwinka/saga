@@ -1,9 +1,10 @@
 import uuid
 
 import pytest
+import redis
 
 from saga.compensator import SagaCompensator
-from saga.events import SocketCommunicationFactory, CommunicationFactory
+from saga.events import RedisCommunicationFactory, CommunicationFactory
 from saga.journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
 from saga.memo import Memoized
 from saga.saga import SagaRunner
@@ -26,9 +27,8 @@ def compensator() -> SagaCompensator:
 
 
 @pytest.fixture()
-def communication_fk(tmp_path) -> CommunicationFactory:
-    sock = tmp_path / 'sock'
-    return SocketCommunicationFactory(sock.as_posix())
+def communication_fk() -> CommunicationFactory:
+    return RedisCommunicationFactory(redis.Redis('127.0.0.1', 6379))
 
 
 @pytest.fixture()
