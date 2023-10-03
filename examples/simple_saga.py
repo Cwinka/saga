@@ -18,7 +18,7 @@ def create_spec_in_directory(worker: SagaWorker, data: SpecData) -> None:
     for i in range(10):
         file = data.path / str(i)
         worker.job(JobSpec(create_spec_file, file, 'foo'))\
-            .with_compensation(remove_spec_file, file).run()
+            .with_compensation(JobSpec(remove_spec_file, file)).run()
     raise AttributeError
 
 
@@ -28,7 +28,7 @@ def create_spec_file(file: Path, content: str) -> None:
         f.write(content)
 
 
-def remove_spec_file(_: None, file: Path) -> None:
+def remove_spec_file(file: Path) -> None:
     print(f'Removing file {file}.')
     os.remove(file)
 

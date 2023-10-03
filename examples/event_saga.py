@@ -42,14 +42,15 @@ def event() -> Event[Foo, Boo]:
     return Ev.make(Foo(foo='12'))
 
 
-def roll_event(x: Boo) -> Event[Foo, Ok]:
-    return RollEv.make(Foo(foo=str(x.boo)))
+def roll_event() -> Event[Foo, Ok]:
+    return RollEv.make(Foo(foo='12'))
 
 
 @idempotent_saga('saga')
 def saga_2(worker: SagaWorker, _: Ok) -> None:
-    e = worker.event_job(JobSpec(event)).with_compensation(roll_event).run()
-    print(worker.job(JobSpec(lambda x: random.randint(1, 1000) + x.boo, e)).run())
+    print(
+        worker.event_job(JobSpec(event)).with_compensation(JobSpec(roll_event)).run()
+    )
 
 
 if __name__ == '__main__':
