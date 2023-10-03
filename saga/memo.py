@@ -60,16 +60,15 @@ class Memoized:
         При повторном вызове f будет возвращен сохраненный результат вместо вызова функции.
         :param f: Функция, результат которой будет сохранен.
         :param retries: Количество возможных повторов функции в случае исключения. Если
-                        количество повторов 0, тогда будет поднято оригинальное исключение.
+                        количество повторов 0, тогда будет поднято оригинальное исключение или
+                        NotEnoughRetries.
         :param retry_interval: Интервал времени (в секундах), через который будет вызван повтор
                                функции в случае исключения.
         """
         op_id = self._next_op_id()
-        exc: Exception = NotEnoughRetries()
 
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
-            nonlocal exc
             record = self._journal.get_record(op_id)
             if record is None:
                 record = self._journal.create_record(op_id)
@@ -78,25 +77,26 @@ class Memoized:
             #  аргументами возвращался новый результат.
             if record.status == JobStatus.DONE:
                 return object_from_bytes(record.result)  # type: ignore[no-any-return]
-            if record.runs > retries:
-                raise exc
-            self._journal.update_record(record.idempotent_operation_id, ['runs'],
-                                        [record.runs+1])
-            fields: List[str] = []
-            values: List[Any] = []
+            if record.runs >= retries:
+                exc = object_from_bytes(record.result)
+                if isinstance(exc, Exception):
+                    raise exc
+                raise NotEnoughRetries()
+            self._journal.update_record(record.idempotent_operation_id,
+                                        ['runs'],
+                                        [record.runs + 1])
             try:
                 r = f(*args, **kwargs)
-                fields.extend(['status', 'result'])
-                values.extend([JobStatus.DONE, object_to_bytes(r)])
+                self._journal.update_record(record.idempotent_operation_id,
+                                            ['status', 'result'],
+                                            [JobStatus.DONE, object_to_bytes(r)])
                 return r
             except Exception as e:
-                exc = e
-                fields.extend(['status', 'runs'])
-                values.extend([JobStatus.FAILED, record.runs+1])
-                if record.runs <= retries:
+                self._journal.update_record(record.idempotent_operation_id,
+                                            ['status', 'result'],
+                                            [JobStatus.FAILED, object_to_bytes(e)])
+                if record.runs < retries:
                     time.sleep(retry_interval)
                     return wrap(*args, **kwargs)
                 raise e
-            finally:
-                self._journal.update_record(record.idempotent_operation_id, fields, values)
         return wrap
