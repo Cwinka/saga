@@ -154,18 +154,19 @@ class SagaWorker:
         """
         self._memo.forget_done()
 
-    def job(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> WorkerJob[T, None]:
+    def job(self, spec: JobSpec[P, T], retries: int = 1, retry_interval: float = 2.0)\
+            -> WorkerJob[T, None]:
         """
-        Создать `WorkerJob` с основной функцией f.
+        Создать `WorkerJob` со спецификацией `spec`.
 
-        :param f: Основная функция.
-        :param args: Любые аргументы для передачи в функцию f.
-        :param kwargs: Любые ключевые аргументы для передачи в функцию f.
+        :param spec: Спецификация функции.
+        :param retries: Количество возможных повторов функции в случае исключения. Если
+                количество повторов 0, тогда будет поднято оригинальное исключение.
+        :param retry_interval: Интервал времени в секундах, через который будет вызван повтор
+                               функции в случае исключения.
         """
-        return WorkerJob[T, None](
-            JobSpec(self._memo.memoize(f), *args, **kwargs),
-            comp_set_callback=self._place_compensation
-        )
+        spec.f = self._memo.memoize(spec.f, retries=retries, retry_interval=retry_interval)
+        return WorkerJob[T, None](spec, comp_set_callback=self._place_compensation)
 
     def event_job(self, f: Callable[P, Event[In, Out]], *args: P.args,
                   **kwargs: P.kwargs) -> WorkerJob[Out, Event[Any, Any]]:
