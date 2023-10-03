@@ -17,14 +17,13 @@ class SpecData(BaseModel):
 def create_spec_in_directory(worker: SagaWorker, data: SpecData) -> None:
     for i in range(10):
         file = data.path / str(i)
-        worker.job(JobSpec(create_spec_file, file, 'foo'), retries=1)\
+        worker.job(JobSpec(create_spec_file, file, 'foo'))\
             .with_compensation(remove_spec_file, file).run()
     raise AttributeError
 
 
 def create_spec_file(file: Path, content: str) -> None:
     print(f'Writing file {file}')
-    raise
     with open(file, 'w') as f:
         f.write(content)
 
