@@ -4,7 +4,7 @@ from typing import Optional
 
 import pytest
 
-from saga.models import JobStatus, Ok, SagaRecord
+from saga.models import JobStatus, Ok, SagaRecord, JobSpec
 from saga.saga import SagaJob, SagaRunner, idempotent_saga
 from saga.worker import SagaWorker, join_key
 
@@ -114,7 +114,7 @@ def test_new_saga_from_record_fail(runner, saga_journal):
 def test_new_saga_from_record(runner, saga_journal):
     @idempotent_saga('saga')
     def saga(worker: SagaWorker, _: Ok) -> int:
-        return worker.job(random.randint, 0, 1000).run()
+        return worker.job(JobSpec(random.randint, 0, 1000)).run()
 
     key = uuid.uuid4()
     r = runner.new(key, saga, Ok()).wait()

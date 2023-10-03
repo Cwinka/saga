@@ -3,9 +3,9 @@ import uuid
 
 import pytest
 
+from saga.models import Ok, JobSpec
 from saga.saga import SagaJob
 from saga.worker import SagaWorker
-from saga.models import Ok
 
 
 def test_saga_job(saga_journal, worker):
@@ -38,7 +38,7 @@ def test_saga_job_idempotent(saga_journal, wk_journal, compensator, forget_done,
     def sum_return(worker: SagaWorker, _) -> int:
         s = 0
         for _ in range(10):
-            s += worker.job(random.randint, 0, 1000).run()
+            s += worker.job(JobSpec(random.randint, 0, 1000)).run()
         return s
 
     uid = uuid.uuid4()
@@ -68,7 +68,7 @@ def test_saga_job_compensation(worker, saga_journal):
         for i in range(1, x+1):
             if i == x:
                 raise SomeError
-            _worker.job(lambda: i).with_compensation(compensate).run()
+            _worker.job(JobSpec(lambda: i)).with_compensation(compensate).run()
 
     job = SagaJob(saga_journal, worker, function, Ok())
 
