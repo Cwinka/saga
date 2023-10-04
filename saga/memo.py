@@ -57,11 +57,13 @@ class Memoized:
         :param f: Функция, результат которой будет сохранен.
         :param retries: Количество возможных повторов функции в случае исключения. Если
                         количество повторов 0, тогда будет поднято оригинальное исключение или
-                        NotEnoughRetries.
+                        NotEnoughRetries. Если retries=-1, тогда количество повторов не ограничено.
         :param retry_interval: Интервал времени (в секундах), через который будет вызван повтор
                                функции в случае исключения.
         """
         op_id = self._next_op_id()
+        if retries < 0:
+            retries = float('+inf')  # type: ignore[assignment]
 
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
