@@ -156,7 +156,8 @@ class SagaWorker:
         return WorkerJob[T, None](spec, comp_set_callback=self._place_compensation)
 
     def event_job(self, spec: JobSpec[Event[In, Out]], retries: int = 1,
-                  retry_interval: float = 2.0) -> WorkerJob[Out, Event[Any, Any]]:
+                  retry_interval: float = 2.0, timeout: float = 10.0) \
+            -> WorkerJob[Out, Event[Any, Any]]:
         """
         Создать `WorkerJob`, который отправляет возвращаемое событие и ожидает его результат.
 
@@ -165,22 +166,25 @@ class SagaWorker:
                         количество повторов 0, тогда будет поднято оригинальное исключение.
         :param retry_interval: Интервал времени в секундах, через который будет вызван повтор
                                функции в случае исключения.
+        :param timeout: Время ожидания ответного события.
         """
         assert self._sender is not None, 'Не установлен отправитель событий.'
-        spec.f = self._memo.memoize(self._auto_send(spec.f),  # type: ignore[arg-type]
+        spec.f = self._memo.memoize(self._auto_send(spec.f, timeout=timeout),  # type: ignore[arg-type]
                                     retries=retries, retry_interval=retry_interval)
         return WorkerJob[Out, Event[Any, Any]](spec,  # type: ignore[arg-type]
                                                comp_set_callback=self._place_event_compensation)
 
     def _place_event_compensation(self, spec: JobSpec[Event[In, Ok]]) -> None:
-        spec.f = self._memo.memoize(self._auto_send(spec.f))  # type: ignore[arg-type]
+        # FIXME: возможно стоит вынести 5 секунд в init.
+        spec.f = self._memo.memoize(self._auto_send(spec.f, timeout=5),  # type: ignore[arg-type]
+                                    retries=-1, retry_interval=1)
         self._compensate.add_compensate(spec)
 
     def _place_compensation(self, spec: JobSpec[None]) -> None:
         spec.f = self._memo.memoize(spec.f)
         self._compensate.add_compensate(spec)
 
-    def _auto_send(self, f: Callable[P, Event[Any, Out]]) -> Callable[P, Out]:
+    def _auto_send(self, f: Callable[P, Event[Any, Out]], timeout: float) -> Callable[P, Out]:
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> Out:
             assert self._sender is not None, 'Не установлен отправитель событий.'
@@ -188,7 +192,7 @@ class SagaWorker:
             if isinstance(event, NotAnEvent):
                 return Ok()  # type: ignore[return-value]
             self._sender.send(self._uuid, event)
-            return self._sender.wait(self._uuid, event)
+            return self._sender.wait(self._uuid, event, timeout=timeout)
         return wrap
 
 

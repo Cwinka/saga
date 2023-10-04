@@ -29,10 +29,11 @@ class EventSender(ABC):
         """
 
     @abstractmethod
-    def wait(self, uuid: UUID, event: Event[Any, Out]) -> Out:
+    def wait(self, uuid: UUID, event: Event[Any, Out], timeout: float) -> Out:
         """
         Подождать результат события.
         Метод может быть использован только в том случае, если событие было отправлено.
+        Метод может поднять `TimeoutError` в случае превышения времени ожидания `timeout`.
         """
 
 
@@ -127,15 +128,19 @@ class RedisEventSender(EventSender):
                                    'model': event.data.model_dump_json(),
                                    'uuid': str(uuid)})
 
-    def wait(self, uuid: UUID, event: Event[Any, Out]) -> Out:
-        while True:
-            return_channel = f'{uuid}${event.name}'
-            for channel, messages in self._rd.xread({return_channel: '0'}, 1,
-                                                    block=1000):
+    def wait(self, uuid: UUID, event: Event[Any, Out], timeout: float) -> Out:
+        return_channel = f'{uuid}${event.name}'
+        block_time_ms = 100
+        stream_reader = self._rd.xread({return_channel: '0'}, 1, block=block_time_ms)
+        rest = timeout
+        while rest > 0:
+            for channel, messages in stream_reader:
                 for _id, payload in messages:
-                    self._rd.xdel(channel, _id)
+                    self._rd.delete(return_channel)
                     return event.model_out.model_validate_json(payload['model'])
-            self._rd.delete(return_channel)
+            rest -= block_time_ms / 1000
+        raise TimeoutError(f'Превышено время ожидания ответа сообщения в очереди '
+                           f'"{return_channel}". Время ожидания: {timeout} сек.')
 
 
 class RedisEventListener(EventListener):
