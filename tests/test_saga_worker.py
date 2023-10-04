@@ -120,3 +120,29 @@ def test_worker_event_send(worker, communication_fk):
 def test_worker_not_an_event_send(worker):
     result = worker.event_job(JobSpec(lambda: NotAnEvent())).run()
     assert isinstance(result, Ok), 'Событие NotAnEvent должно возвращать Ok.'
+
+
+def test_worker_event_comp(worker, communication_fk):
+    events = SagaEvents()
+    spec = EventSpec('e', model_in=Ok, model_out=Ok)
+    comp_spec = EventSpec('c', model_in=Ok, model_out=Ok)
+    comp_delivered = False
+
+    @events.entry(comp_spec)
+    def comp(*args) -> Ok:
+        nonlocal comp_delivered
+        comp_delivered = True
+        return Ok()
+
+    @events.entry(spec)
+    def ev(*args):
+        time.sleep(0.2)
+        return Ok()
+
+    communication_fk.listener(events).run_in_thread()
+
+    with pytest.raises(TimeoutError):
+        worker.event_job(JobSpec(spec.make, Ok()), timeout=0)\
+            .with_compensation(JobSpec(comp_spec.make, Ok())).run()
+    worker.compensate()
+    assert comp_delivered, 'Событий компенсации должно быть доставлено принимающей стороне.'
