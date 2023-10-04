@@ -121,3 +121,15 @@ def test_new_saga_from_record(runner, saga_journal):
     r2 = runner.new_from(key, saga).wait()
     assert r == r2, (f'Запуск саги методом {SagaRunner.new_from.__name__} должен вернуть тот же '
                      f'результат.')
+
+
+def test_new_saga_from_record_data(runner, saga_journal):
+    @idempotent_saga('saga')
+    def saga(worker: SagaWorker, _: Ok):
+        pass
+
+    key = uuid.uuid4()
+    data = Ok(ok=42)
+    runner.new(key, saga, data).wait()
+    job2 = runner.new_from(key, saga)
+    assert job2.data == data, 'Полученные данные не совпадают с переданными.'

@@ -16,6 +16,12 @@ def test_saga_job(saga_journal, worker):
     assert isinstance(job, SagaJob)
 
 
+def test_saga_job_data(saga_journal, worker):
+    data = Ok()
+    job = SagaJob(saga_journal, worker, lambda *_: None, data)
+    assert job.data == data, 'Полученные данные не совпадают с переданными.'
+
+
 @pytest.mark.parametrize('test_function, expected_result', [
     (lambda _, r: '42', '42'),
     (lambda _, r: 42.0, 42.0),
