@@ -147,7 +147,7 @@ def test_worker_event_comp(worker, communication_fk):
     communication_fk.listener(events).run_in_thread()
 
     with pytest.raises(TimeoutError):
-        worker.event_job(JobSpec(spec.make, Ok()), timeout=0)\
+        worker.event_job(JobSpec(spec.make, Ok()), timeout=0.1)\
             .with_compensation(JobSpec(comp_spec.make, Ok())).run()
     worker.compensate()
     assert comp_delivered, 'Событий компенсации должно быть доставлено принимающей стороне.'
