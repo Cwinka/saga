@@ -1,9 +1,7 @@
 import functools
-import json
-import socket
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Optional, ParamSpec, Tuple, Type
+from typing import Any, Callable, Dict, ParamSpec, Tuple, Type
 from uuid import UUID
 
 import redis
@@ -159,12 +157,15 @@ class RedisEventListener(EventListener):
         while True:
             for channel, messages in self._rd.xread(self._streams, len(self._streams), block=1000):
                 for _id, payload in messages:
-                    model_in, _, handler = self._bind[channel]
-                    model = model_in.model_validate_json(payload['model'])
-                    uuid = UUID(payload['uuid'])
-                    ret = handler(uuid, model)
-                    self._rd.xadd(payload['return'], {'model': ret.model_dump_json()})
-                    self._rd.xdel(channel, _id)
+                    self._handle_event(channel, _id, payload)
+
+    def _handle_event(self, channel: str, _id: str, payload: Dict[str, str]) -> None:
+        model_in, _, handler = self._bind[channel]
+        model = model_in.model_validate_json(payload['model'])
+        uuid = UUID(payload['uuid'])
+        ret = handler(uuid, model)
+        self._rd.xadd(payload['return'], {'model': ret.model_dump_json()})
+        self._rd.xdel(channel, _id)
 
 
 class RedisCommunicationFactory(CommunicationFactory):
