@@ -1,12 +1,10 @@
 import time
-import uuid
 
 import pytest
 
 from saga.events import SagaEvents
-from saga.journal import MemoryJournal
-from saga.models import NotAnEvent, Ok, JobSpec, Event, EventSpec
-from saga.worker import SagaWorker, WorkerJob, join_key
+from saga.models import NotAnEvent, Ok, JobSpec, Event, EventSpec, JobStatus
+from saga.worker import WorkerJob
 
 
 class SomeError(Exception):
@@ -18,18 +16,15 @@ def test_worker_job_create(worker):
     assert isinstance(job, WorkerJob)
 
 
-def test_worker_journal(compensator):
-    journal = MemoryJournal()
-    k = uuid.uuid4()
-    worker = SagaWorker(k, '1', journal, compensator, None)
-    worker.job(JobSpec(lambda: 1)).run()
-    assert journal.get_record(f'{join_key(k, "1")}_1') is not None
-
-
 def test_worker_run(worker):
     x = 42
     result = worker.job(JobSpec(lambda: x)).run()
     assert result == x
+
+
+def test_worker_run_done_status(worker, wk_journal):
+    worker.job(JobSpec(lambda: 1)).run()
+    assert wk_journal.get_record(f'{worker.idempotent_key}_1').status == JobStatus.DONE
 
 
 def test_worker_run_exception(worker):
@@ -38,6 +33,16 @@ def test_worker_run_exception(worker):
 
     with pytest.raises(SomeError):
         worker.job(JobSpec(foo)).run()
+
+
+def test_worker_run_fail_status(worker, wk_journal):
+    def foo() -> None:
+        raise SomeError()
+    try:
+        worker.job(JobSpec(foo)).run()
+    except SomeError:
+        pass
+    assert wk_journal.get_record(f'{worker.idempotent_key}_1').status == JobStatus.FAILED
 
 
 def test_worker_run_compensate(worker):
