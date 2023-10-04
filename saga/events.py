@@ -44,7 +44,7 @@ class EventListener(ABC):
 
     @abstractmethod
     def run_in_thread(self) -> None:
-        pass
+        """ Запустить прослушивание событий в отдельном потоке. """""
 
     @staticmethod
     def events_map(*events: 'SagaEvents') -> EventMap:
