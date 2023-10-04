@@ -76,9 +76,9 @@ class Memoized:
             # FIXME: также нужно запомнить аргументы вызова, чтобы при запуске с другими
             #  аргументами возвращался новый результат.
             if record.status == JobStatus.DONE:
-                return object_from_bytes(record.result)  # type: ignore[no-any-return]
+                return self._obj_from_b(record.result)  # type: ignore[no-any-return]
             if record.runs >= retries:
-                exc = object_from_bytes(record.result)
+                exc = self._obj_from_b(record.result)
                 if isinstance(exc, Exception):
                     raise exc
                 raise NotEnoughRetries()
@@ -89,12 +89,12 @@ class Memoized:
                 r = f(*args, **kwargs)
                 self._journal.update_record(record.idempotent_operation_id,
                                             ['status', 'result'],
-                                            [JobStatus.DONE, object_to_bytes(r)])
+                                            [JobStatus.DONE, self._obj_to_b(r)])
                 return r
             except Exception as e:
                 self._journal.update_record(record.idempotent_operation_id,
                                             ['status', 'result'],
-                                            [JobStatus.FAILED, object_to_bytes(e)])
+                                            [JobStatus.FAILED, self._obj_to_b(e)])
                 if record.runs < retries:
                     time.sleep(retry_interval)
                     return wrap(*args, **kwargs)
