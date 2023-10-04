@@ -5,7 +5,7 @@ import time
 from typing import Any, Callable, List, ParamSpec, TypeVar
 
 from saga.journal import WorkerJournal
-from saga.models import JobStatus
+from saga.models import JobRecord, JobStatus
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -43,10 +43,6 @@ class Memoized:
         self._obj_to_b = obj_to_b
         self._obj_from_b = obj_from_b
 
-    def _next_op_id(self) -> str:
-        self._operation_id += 1
-        return f'{self._memo_prefix}_{self._operation_id}'
-
     def forget_done(self) -> None:
         """
         Удалить все сохраненные результаты работы.
@@ -69,12 +65,7 @@ class Memoized:
 
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
-            record = self._journal.get_record(op_id)
-            if record is None:
-                record = self._journal.create_record(op_id)
-                self._done.append(record.idempotent_operation_id)
-            # FIXME: также нужно запомнить аргументы вызова, чтобы при запуске с другими
-            #  аргументами возвращался новый результат.
+            record = self._get_record(op_id)
             if record.status == JobStatus.DONE:
                 return self._obj_from_b(record.result)  # type: ignore[no-any-return]
             if record.runs >= retries:
@@ -90,6 +81,7 @@ class Memoized:
                 self._journal.update_record(record.idempotent_operation_id,
                                             ['status', 'result'],
                                             [JobStatus.DONE, self._obj_to_b(r)])
+                self._done.append(record.idempotent_operation_id)
                 return r
             except Exception as e:
                 self._journal.update_record(record.idempotent_operation_id,
@@ -100,3 +92,13 @@ class Memoized:
                     return wrap(*args, **kwargs)
                 raise e
         return wrap
+
+    def _next_op_id(self) -> str:
+        self._operation_id += 1
+        return f'{self._memo_prefix}_{self._operation_id}'
+
+    def _get_record(self, op_id: str) -> JobRecord:
+        record = self._journal.get_record(op_id)
+        if record is None:
+            record = self._journal.create_record(op_id)
+        return record
