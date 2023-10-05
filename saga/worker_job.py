@@ -14,21 +14,19 @@ class WorkerJob(Generic[T, C]):
         def any_function() -> int:
             ...
 
-        job = WorkerJob(JobSpec(any_function, *args, **kwargs))
+        job = WorkerJob(JobSpec(any_function))
         job.run()
 
     Для того, чтобы откатить результат выполнения функции `any_function` необходимо добавить
-    компенсирующую функцию, которая первым аргументом принимает возвращаемое значение
-    `any_function`:
+    компенсирующую функцию `any_function`:
 
-        def rollback_any_function(result_of_any_function: int) -> None:
+        def rollback_any_function() -> None:
             ...
 
-        job.with_compensation(rollback_any_function)
+        job = WorkerJob(JobSpec(any_function))
+        job.with_compensation(JobSpec(rollback_any_function))
         job.run()
-
         ...
-
         job.compensate()
     """
 
