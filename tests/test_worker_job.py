@@ -38,6 +38,20 @@ def test_worker_job_with_compensation():
     assert compensate_check == x, 'Компенсационная функция не была запущена.'
 
 
+def test_worker_job_with_parametrized_compensation():
+    compensate_check = 0
+    x = 42
+
+    def foo(_x: int) -> None:
+        nonlocal compensate_check
+        compensate_check = _x
+
+    job1 = WorkerJob(JobSpec(lambda _x: _x, x))
+    job1.with_parametrized_compensation(foo).run()
+    job1.compensate()
+    assert compensate_check == x, 'Компенсационная функция не была запущена.'
+
+
 def test_worker_job_with_multiple_compensations():
     compensate_check = 0
     x = 42
