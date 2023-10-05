@@ -116,7 +116,6 @@ class SagaWorker:
                                                comp_set_callback=self._place_event_compensation)
 
     def _place_event_compensation(self, spec: JobSpec[Event[In, Ok]]) -> None:
-        # FIXME: возможно стоит вынести 5 секунд в init.
         spec.f = self._memo.memoize(self._auto_send(spec.f,  # type: ignore[arg-type]
                                                     timeout=self._compensation_event_timeout,
                                                     cancel_previous_uuid=True),
