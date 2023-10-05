@@ -182,7 +182,7 @@ class SagaWorker:
         self._compensate.add_compensate(spec)
 
     def _place_compensation(self, spec: JobSpec[None]) -> None:
-        spec.f = self._memo.memoize(spec.f)
+        spec.f = self._memo.memoize(spec.f, retries=-1, retry_interval=1)
         self._compensate.add_compensate(spec)
 
     def _auto_send(self, f: Callable[P, Event[Any, Out]], timeout: float,
