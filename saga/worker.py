@@ -81,8 +81,8 @@ class SagaWorker:
         """
         self._memo.forget_done()
 
-    def job(self, spec: JobSpec[T], retries: int = 1, retry_interval: float = 2.0)\
-            -> WorkerJob[T, None]:
+    def job(self, spec: JobSpec[T, P], retries: int = 1, retry_interval: float = 2.0)\
+            -> WorkerJob[T, None, P]:
         """
         Создать `WorkerJob` со спецификацией `spec`.
 
@@ -93,11 +93,11 @@ class SagaWorker:
                                функции в случае исключения.
         """
         spec.f = self._memo.memoize(spec.f, retries=retries, retry_interval=retry_interval)
-        return WorkerJob[T, None](spec, comp_set_callback=self._place_compensation)
+        return WorkerJob[T, None, P](spec, comp_set_callback=self._place_compensation)
 
-    def event_job(self, spec: JobSpec[Event[In, Out]], retries: int = 1,
+    def event_job(self, spec: JobSpec[Event[In, Out], P], retries: int = 1,
                   retry_interval: float = 2.0, timeout: float = 10.0) \
-            -> WorkerJob[Out, Event[Any, Any]]:
+            -> WorkerJob[Out, Event[Any, Any], P]:
         """
         Создать `WorkerJob`, который отправляет возвращаемое событие и ожидает его результат.
 
@@ -112,10 +112,10 @@ class SagaWorker:
         spec.f = self._memo.memoize(self._auto_send(spec.f,  # type: ignore[arg-type]
                                                     timeout=timeout),
                                     retries=retries, retry_interval=retry_interval)
-        return WorkerJob[Out, Event[Any, Any]](spec,  # type: ignore[arg-type]
-                                               comp_set_callback=self._place_event_compensation)
+        return WorkerJob[Out, Event[Any, Any], P](spec,  # type: ignore[arg-type]
+                                                  comp_set_callback=self._place_event_compensation)
 
-    def _place_event_compensation(self, spec: JobSpec[Event[Any, Ok]]) -> None:
+    def _place_event_compensation(self, spec: JobSpec[Event[Any, Ok], ...]) -> None:
         spec.f = self._memo.memoize(self._auto_send(spec.f,  # type: ignore[arg-type]
                                                     timeout=self._compensation_event_timeout,
                                                     cancel_previous_uuid=True),
@@ -123,7 +123,7 @@ class SagaWorker:
                                     retry_interval=self._compensation_interval)
         self._compensate.add_compensate(spec)
 
-    def _place_compensation(self, spec: JobSpec[None]) -> None:
+    def _place_compensation(self, spec: JobSpec[None, ...]) -> None:
         spec.f = self._memo.memoize(spec.f, retries=self._compensation_max_retries,
                                     retry_interval=self._compensation_interval)
         self._compensate.add_compensate(spec)
