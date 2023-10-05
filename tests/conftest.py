@@ -7,7 +7,7 @@ from saga.compensator import SagaCompensator
 from saga.events import RedisCommunicationFactory, CommunicationFactory
 from saga.journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
 from saga.memo import Memoized
-from saga.saga import SagaRunner
+from saga.runner import SagaRunner
 from saga.worker import SagaWorker
 
 

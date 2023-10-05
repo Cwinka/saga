@@ -5,7 +5,8 @@ from typing import Optional
 import pytest
 
 from saga.models import JobStatus, Ok, SagaRecord, JobSpec
-from saga.saga import SagaJob, SagaRunner, idempotent_saga
+from saga.saga import SagaJob
+from saga.runner import SagaRunner, idempotent_saga
 from saga.worker import SagaWorker, join_key
 
 
