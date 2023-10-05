@@ -8,6 +8,8 @@ from pydantic import BaseModel
 
 P = ParamSpec('P')
 T = TypeVar('T')
+M = TypeVar('M', bound=BaseModel)
+
 In = TypeVar('In', bound=BaseModel)
 Out = TypeVar('Out', bound=BaseModel)
 
