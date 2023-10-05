@@ -57,21 +57,20 @@ class JobRecord(BaseModel):
     """ Количество запусков. """
 
 
-class JobSpec(Generic[T]):
+class JobSpec(Generic[T, P]):
     """
     Спецификация функции. Аналог функции `functools.partial`.
     """
     def __init__(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
         self.f = f
-        self._orig_args = args
-        self._args: List[Any] = []
-        self._orig_kwargs = kwargs
+        self.args = args
+        self.kwargs = kwargs
 
     def call(self) -> T:
         """
         Выполнить основную функцию.
         """
-        return self.f(*self._args, *self._orig_args, **self._orig_kwargs)
+        return self.f(*self.args, **self.kwargs)
 
 
 class Event(Generic[In, Out]):
