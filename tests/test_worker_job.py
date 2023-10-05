@@ -1,6 +1,6 @@
 import pytest
 
-from saga.worker import WorkerJob
+from saga.worker_job import WorkerJob
 from saga.models import JobSpec
 
 

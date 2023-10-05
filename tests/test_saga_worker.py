@@ -1,11 +1,11 @@
 import time
-
-import pytest
 from uuid import UUID
 
+import pytest
+
 from saga.events import SagaEvents
-from saga.models import NotAnEvent, Ok, JobSpec, Event, EventSpec, JobStatus
-from saga.worker import WorkerJob
+from saga.models import NotAnEvent, Ok, JobSpec, EventSpec, JobStatus
+from saga.worker_job import WorkerJob
 
 
 class SomeError(Exception):
