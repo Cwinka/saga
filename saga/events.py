@@ -1,6 +1,10 @@
+import dataclasses
 import functools
+import os
 import threading
 from abc import ABC, abstractmethod
+from concurrent.futures import Future
+from concurrent.futures.thread import ThreadPoolExecutor
 from typing import Any, Callable, Dict, ParamSpec, Tuple, Type
 from uuid import UUID
 
@@ -21,7 +25,7 @@ class EventSender(ABC):
     """
 
     @abstractmethod
-    def send(self, uuid: UUID, event: Event[Any, Any]) -> None:
+    def send(self, uuid: UUID, event: Event[Any, Any], cancel_previous_uuid: bool) -> None:
         """
         Отправить событие event.
         """
@@ -45,6 +49,9 @@ class EventListener(ABC):
     @abstractmethod
     def run_in_thread(self) -> None:
         """ Запустить прослушивание событий в отдельном потоке. """""
+
+    def shutdown(self) -> None:
+        """ Завершить прослушивание событий. """
 
     @staticmethod
     def events_map(*events: 'SagaEvents') -> EventMap:
@@ -121,18 +128,24 @@ class RedisEventSender(EventSender):
     def __init__(self, rd: redis.Redis):
         self._rd = rd
 
-    def send(self, uuid: UUID, event: Event[Any, Any]) -> None:
-        self._rd.xadd(event.name, {'return': f'{uuid}${event.name}',
+    def send(self, uuid: UUID, event: Event[Any, Any], cancel_previous_uuid: bool) -> None:
+        return_channel = f'{uuid}${event.name}'
+        # Удаление канала нужно чтобы в нем не осталось непрочитанных данных. Даже в случае
+        # наличия данных в канале, если функция идемпотентна то второй вызов ничего не сделает,
+        # если нет, тогда отправка события в неидемпотентного получателя не должна произойти вовсе.
+        self._rd.delete(return_channel)
+        self._rd.xadd(event.name, {'return': return_channel,
                                    'model': event.data.model_dump_json(),
-                                   'uuid': str(uuid)})
+                                   'uuid': str(uuid),
+                                   'cancel': int(cancel_previous_uuid)})
 
     def wait(self, uuid: UUID, event: Event[Any, Out], timeout: float) -> Out:
         return_channel = f'{uuid}${event.name}'
         block_time_ms = 100
-        stream_reader = self._rd.xread({return_channel: '0'}, 1, block=block_time_ms)
+        channels = {return_channel: '0'}
         rest = timeout
         while rest > 0:
-            for channel, messages in stream_reader:
+            for channel, messages in self._rd.xread(channels, 1, block=block_time_ms):
                 for _id, payload in messages:
                     self._rd.delete(return_channel)
                     return event.model_out.model_validate_json(payload['model'])
@@ -143,29 +156,74 @@ class RedisEventSender(EventSender):
 
 class RedisEventListener(EventListener):
 
+    @dataclasses.dataclass
+    class Message:
+        uuid: UUID
+        channel: str
+        return_channel: str
+        message_id: str
+        cancel_previous_future: int
+
     def __init__(self, rd: redis.Redis, *events: SagaEvents):
         self._rd = rd
         self._bind = self.events_map(*events)
         self._streams = {}
+        self._running_p: Dict[UUID, Future[Any]] = {}
+        self._working = True
+        self._executor = ThreadPoolExecutor(os.cpu_count())
         for ev in self._bind:
             self._streams[ev] = '0'
 
     def run_in_thread(self) -> None:
         threading.Thread(target=self._run, daemon=True).start()
 
-    def _run(self) -> None:
-        while True:
-            for channel, messages in self._rd.xread(self._streams, len(self._streams), block=1000):
-                for _id, payload in messages:
-                    self._handle_event(channel, _id, payload)
+    def shutdown(self) -> None:
+        self._working = False
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
-    def _handle_event(self, channel: str, _id: str, payload: Dict[str, str]) -> None:
-        model_in, _, handler = self._bind[channel]
-        model = model_in.model_validate_json(payload['model'])
-        uuid = UUID(payload['uuid'])
-        ret = handler(uuid, model)
-        self._rd.xadd(payload['return'], {'model': ret.model_dump_json()})
-        self._rd.xdel(channel, _id)
+    def _run(self) -> None:
+        while self._working:
+            self._read_channels()
+
+    def _read_channels(self) -> None:
+        for channel, messages in self._rd.xread(self._streams, len(self._streams), block=1000):
+            model_in, _, handler = self._bind[channel]
+            message_id = '0'
+            for message_id, payload in messages:
+                message = self.Message(UUID(payload['uuid']), channel, payload['return'], message_id,
+                                       int(payload['cancel']))
+                model = model_in.model_validate_json(payload['model'])
+                # Удаление сообщения нужно потому, что если функция не идемпотентная,
+                # тогда нельзя запускать ее второй раз, при остановке посередине. Ответственность
+                # за перезапуск лежит на отправителе.
+                self._rd.xdel(channel, message_id)
+                if message.cancel_previous_future:
+                    future = self._running_p.get(message.uuid)
+                    if future is not None and not future.cancel():
+                        shed = functools.partial(self._schedule_fut, message, model, handler)
+                        future.add_done_callback(shed)
+                        continue
+                self._schedule_fut(message, model, handler)
+            self._streams[channel] = message_id
+        done = []
+        for uuid, future in self._running_p.items():
+            if future.done():
+                done.append(uuid)
+        for uuid in done:
+            del self._running_p[uuid]
+
+    def _schedule_fut(self, message: Message, model: BaseModel,
+                      handler: Callable[[UUID, BaseModel], BaseModel], *_) -> None:
+        if not self._working:
+            return
+        future = self._executor.submit(handler, message.uuid, model)
+        future.add_done_callback(functools.partial(self._future_done, message))
+        self._running_p[message.uuid] = future
+
+    def _future_done(self, message: Message, future: Future[BaseModel]) -> None:
+        # TODO: обработать исключение в future
+        result = future.result(timeout=0.1)
+        self._rd.xadd(message.return_channel, {'model': result.model_dump_json()})
 
 
 class RedisCommunicationFactory(CommunicationFactory):

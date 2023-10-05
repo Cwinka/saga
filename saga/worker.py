@@ -176,7 +176,8 @@ class SagaWorker:
 
     def _place_event_compensation(self, spec: JobSpec[Event[In, Ok]]) -> None:
         # FIXME: возможно стоит вынести 5 секунд в init.
-        spec.f = self._memo.memoize(self._auto_send(spec.f, timeout=5),  # type: ignore[arg-type]
+        spec.f = self._memo.memoize(self._auto_send(spec.f, timeout=5,  # type: ignore[arg-type]
+                                                    cancel_previous_uuid=True),
                                     retries=-1, retry_interval=1)
         self._compensate.add_compensate(spec)
 
@@ -184,14 +185,15 @@ class SagaWorker:
         spec.f = self._memo.memoize(spec.f)
         self._compensate.add_compensate(spec)
 
-    def _auto_send(self, f: Callable[P, Event[Any, Out]], timeout: float) -> Callable[P, Out]:
+    def _auto_send(self, f: Callable[P, Event[Any, Out]], timeout: float,
+                   cancel_previous_uuid: bool = False) -> Callable[P, Out]:
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> Out:
             assert self._sender is not None, 'Не установлен отправитель событий.'
             event = f(*args, **kwargs)
             if isinstance(event, NotAnEvent):
                 return Ok()  # type: ignore[return-value]
-            self._sender.send(self._uuid, event)
+            self._sender.send(self._uuid, event, cancel_previous_uuid=cancel_previous_uuid)
             return self._sender.wait(self._uuid, event, timeout=timeout)
         return wrap
 
