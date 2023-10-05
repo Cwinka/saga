@@ -1,9 +1,11 @@
+import dataclasses
 import functools
-import json
-import socket
+import os
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Optional, ParamSpec, Tuple, Type
+from concurrent.futures import Future
+from concurrent.futures.thread import ThreadPoolExecutor
+from typing import Any, Callable, Dict, ParamSpec, Tuple, Type
 from uuid import UUID
 
 import redis
@@ -23,16 +25,17 @@ class EventSender(ABC):
     """
 
     @abstractmethod
-    def send(self, uuid: UUID, event: Event[Any, Any]) -> None:
+    def send(self, uuid: UUID, event: Event[Any, Any], cancel_previous_uuid: bool) -> None:
         """
         Отправить событие event.
         """
 
     @abstractmethod
-    def wait(self, event: Event[Any, Out]) -> Out:
+    def wait(self, uuid: UUID, event: Event[Any, Out], timeout: float) -> Out:
         """
         Подождать результат события.
         Метод может быть использован только в том случае, если событие было отправлено.
+        Метод может поднять `TimeoutError` в случае превышения времени ожидания `timeout`.
         """
 
 
@@ -45,7 +48,10 @@ class EventListener(ABC):
 
     @abstractmethod
     def run_in_thread(self) -> None:
-        pass
+        """ Запустить прослушивание событий в отдельном потоке. """""
+
+    def shutdown(self) -> None:
+        """ Завершить прослушивание событий. """
 
     @staticmethod
     def events_map(*events: 'SagaEvents') -> EventMap:
@@ -117,103 +123,107 @@ class SagaEvents:
         return wrap
 
 
-class SocketEventSender(EventSender):
-    def __init__(self, file: str):
-        self._file = file
-        self._sock: Optional[socket.socket] = None
-
-    def _connect(self) -> None:
-        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self._sock.connect(self._file)
-
-    def _disconnect(self) -> None:
-        assert self._sock is not None
-        self._sock.close()
-        self._sock = None
-
-    def send(self, uuid: UUID, event: Event[Any, Any]) -> None:
-        data = {'event': event.name, 'return': event.ret_name,
-                'model': event.data.model_dump_json(), 'uuid': str(uuid)}
-        self._connect()
-        assert self._sock is not None
-        self._sock.send(json.dumps(data).encode('utf8'))
-
-    def wait(self, event: Event[Any, Out]) -> Out:
-        assert self._sock is not None, 'Данные не были отправлены.'
-        data = self._sock.recv(1024)
-        self._disconnect()
-        return event.model_out.model_validate_json(data)
-
-
-class SocketEventListener(EventListener):
-    def __init__(self, file: str, *events: SagaEvents):
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.bind(file)
-        self._sock = sock
-        self._map = self.events_map(*events)
-
-    def run_in_thread(self) -> None:
-        threading.Thread(target=self._run, daemon=True).start()
-
-    def _run(self) -> None:
-        self._sock.listen()
-        while True:
-            conn, _ = self._sock.accept()
-            self._handle(conn)
-            conn.close()
-
-    def _handle(self, conn: socket.socket) -> None:
-        data = conn.recv(1024)
-        json_data = json.loads(data)
-        model_in, _, handler = self._map[json_data['event']]
-        model = model_in.model_validate_json(json_data['model'])
-        uuid = UUID(json_data['uuid'])
-        ret = handler(uuid, model)
-        conn.send(ret.model_dump_json().encode('utf8'))
-
-
 class RedisEventSender(EventSender):
 
     def __init__(self, rd: redis.Redis):
         self._rd = rd
 
-    def send(self, uuid: UUID, event: Event[Any, Any]) -> None:
-        self._rd.xadd(event.name, {'return': event.ret_name,
+    def send(self, uuid: UUID, event: Event[Any, Any], cancel_previous_uuid: bool) -> None:
+        return_channel = f'{uuid}${event.name}'
+        # Удаление канала нужно чтобы в нем не осталось непрочитанных данных. Даже в случае
+        # наличия данных в канале, если функция идемпотентна то второй вызов ничего не сделает,
+        # если нет, тогда отправка события в неидемпотентного получателя не должна произойти вовсе.
+        self._rd.delete(return_channel)
+        self._rd.xadd(event.name, {'return': return_channel,
                                    'model': event.data.model_dump_json(),
-                                   'uuid': str(uuid)})
+                                   'uuid': str(uuid),
+                                   'cancel': int(cancel_previous_uuid)})
 
-    def wait(self, event: Event[Any, Out]) -> Out:
-        while True:
-            for channel, messages in self._rd.xread({event.ret_name: '0'}, 1,
-                                                    block=1000):
+    def wait(self, uuid: UUID, event: Event[Any, Out], timeout: float) -> Out:
+        return_channel = f'{uuid}${event.name}'
+        block_time_ms = 100
+        channels = {return_channel: '0'}
+        rest = timeout
+        while rest > 0:
+            for channel, messages in self._rd.xread(channels, 1, block=block_time_ms):
                 for _id, payload in messages:
-                    self._rd.xdel(channel, _id)
+                    self._rd.delete(return_channel)
                     return event.model_out.model_validate_json(payload['model'])
-            self._rd.delete(event.ret_name)
+            rest -= block_time_ms / 1000
+        raise TimeoutError(f'Превышено время ожидания ответа сообщения в очереди '
+                           f'"{return_channel}". Время ожидания: {timeout} сек.')
 
 
 class RedisEventListener(EventListener):
+
+    @dataclasses.dataclass
+    class Message:
+        uuid: UUID
+        channel: str
+        return_channel: str
+        message_id: str
+        cancel_previous_future: int
 
     def __init__(self, rd: redis.Redis, *events: SagaEvents):
         self._rd = rd
         self._bind = self.events_map(*events)
         self._streams = {}
+        self._running_p: Dict[UUID, Future[Any]] = {}
+        self._working = True
+        self._executor = ThreadPoolExecutor(os.cpu_count())
         for ev in self._bind:
             self._streams[ev] = '0'
 
     def run_in_thread(self) -> None:
         threading.Thread(target=self._run, daemon=True).start()
 
+    def shutdown(self) -> None:
+        self._working = False
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
     def _run(self) -> None:
-        while True:
-            for channel, messages in self._rd.xread(self._streams, len(self._streams), block=1000):
-                for _id, payload in messages:
-                    model_in, _, handler = self._bind[channel]
-                    model = model_in.model_validate_json(payload['model'])
-                    uuid = UUID(payload['uuid'])
-                    ret = handler(uuid, model)
-                    self._rd.xadd(payload['return'], {'model': ret.model_dump_json()})
-                    self._rd.xdel(channel, _id)
+        while self._working:
+            self._read_channels()
+
+    def _read_channels(self) -> None:
+        for channel, messages in self._rd.xread(self._streams, len(self._streams), block=1000):
+            model_in, _, handler = self._bind[channel]
+            message_id = '0'
+            for message_id, payload in messages:
+                message = self.Message(UUID(payload['uuid']), channel, payload['return'], message_id,
+                                       int(payload['cancel']))
+                model = model_in.model_validate_json(payload['model'])
+                # Удаление сообщения нужно потому, что если функция не идемпотентная,
+                # тогда нельзя запускать ее второй раз, при остановке посередине. Ответственность
+                # за перезапуск лежит на отправителе.
+                self._rd.xdel(channel, message_id)
+                if message.cancel_previous_future:
+                    future = self._running_p.get(message.uuid)
+                    if future is not None and not future.cancel():
+                        shed = functools.partial(self._schedule_fut, message, model, handler)
+                        future.add_done_callback(shed)
+                        continue
+                self._schedule_fut(message, model, handler)
+            self._streams[channel] = message_id
+        done = []
+        for uuid, future in self._running_p.items():
+            if future.done():
+                done.append(uuid)
+        for uuid in done:
+            del self._running_p[uuid]
+
+    def _schedule_fut(self, message: Message, model: BaseModel,
+                      handler: Callable[[UUID, BaseModel], BaseModel], *_) -> None:
+        if not self._working:
+            return
+        future = self._executor.submit(handler, message.uuid, model)
+        future.add_done_callback(functools.partial(self._future_done, message))
+        self._running_p[message.uuid] = future
+
+    def _future_done(self, message: Message, future: Future[BaseModel]) -> None:
+        # TODO: обработать исключение в future
+        result = future.result(timeout=0.1)
+        self._rd.xadd(message.return_channel, {'model': result.model_dump_json()})
 
 
 class RedisCommunicationFactory(CommunicationFactory):
@@ -226,15 +236,3 @@ class RedisCommunicationFactory(CommunicationFactory):
 
     def sender(self) -> RedisEventSender:
         return RedisEventSender(self._rd)
-
-
-class SocketCommunicationFactory(CommunicationFactory):
-
-    def __init__(self, file: str):
-        self._file = file
-
-    def listener(self, *events: SagaEvents) -> SocketEventListener:
-        return SocketEventListener(self._file, *events)
-
-    def sender(self) -> SocketEventSender:
-        return SocketEventSender(self._file)

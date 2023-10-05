@@ -6,7 +6,7 @@ import redis
 from pydantic import BaseModel
 
 from saga import Event, EventSpec, Ok, SagaEvents, SagaRunner, \
-    SagaWorker, idempotent_saga, SocketCommunicationFactory
+    SagaWorker, idempotent_saga, RedisCommunicationFactory, JobSpec
 
 
 # shared part
@@ -42,20 +42,21 @@ def event() -> Event[Foo, Boo]:
     return Ev.make(Foo(foo='12'))
 
 
-def roll_event(x: Boo) -> Event[Foo, Ok]:
-    return RollEv.make(Foo(foo=str(x.boo)))
+def roll_event() -> Event[Foo, Ok]:
+    return RollEv.make(Foo(foo='12'))
 
 
 @idempotent_saga('saga')
 def saga_2(worker: SagaWorker, _: Ok) -> None:
-    e = worker.event_job(event).with_compensation(roll_event).run()
-    print(worker.job(lambda x: random.randint(1, 1000) + x.boo, e).run())
+    print(
+        worker.event_job(JobSpec(event), timeout=1).with_compensation(JobSpec(roll_event)).run()
+    )
 
 
 if __name__ == '__main__':
     rd = redis.Redis('localhost', 6379, decode_responses=True)
 
-    cfk = SocketCommunicationFactory(f'{tempfile.gettempdir()}/test_event.sock')
+    cfk = RedisCommunicationFactory(rd)
     cfk.listener(events).run_in_thread()
 
     runner = SagaRunner(cfk=cfk)

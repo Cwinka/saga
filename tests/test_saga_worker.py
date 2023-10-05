@@ -1,57 +1,61 @@
 import time
-import uuid
 
 import pytest
+from uuid import UUID
 
-from saga.events import Event, EventSpec, SagaEvents
-from saga.journal import MemoryJournal
-from saga.models import NotAnEvent, Ok
-from saga.worker import SagaWorker, WorkerJob, join_key
+from saga.events import SagaEvents
+from saga.models import NotAnEvent, Ok, JobSpec, Event, EventSpec, JobStatus
+from saga.worker import WorkerJob
 
 
-def run_in_worker(x: int) -> str:
-    return str(x)
+class SomeError(Exception):
+    pass
 
 
 def test_worker_job_create(worker):
-    job = worker.job(run_in_worker, 1)
+    job = worker.job(JobSpec(lambda: 1))
     assert isinstance(job, WorkerJob)
-
-
-def test_worker_journal(compensator):
-    journal = MemoryJournal()
-    k = uuid.uuid4()
-    worker = SagaWorker(k, '1', journal, compensator, None)
-    worker.job(lambda: 1).run()
-    assert journal.get_record(f'{join_key(k, "1")}_1') is not None
 
 
 def test_worker_run(worker):
     x = 42
-    result = worker.job(run_in_worker, x).run()
-    assert result == str(x)
+    result = worker.job(JobSpec(lambda: x)).run()
+    assert result == x
+
+
+def test_worker_run_done_status(worker, wk_journal):
+    worker.job(JobSpec(lambda: 1)).run()
+    assert wk_journal.get_record(f'{worker.idempotent_key}_1').status == JobStatus.DONE
 
 
 def test_worker_run_exception(worker):
-    class SomeError(Exception):
-        pass
-
     def foo() -> None:
-        raise SomeError
+        raise SomeError()
 
     with pytest.raises(SomeError):
-        worker.job(foo).run()
+        worker.job(JobSpec(foo)).run()
+
+
+def test_worker_run_fail_status(worker, wk_journal):
+    def foo() -> None:
+        raise SomeError()
+    try:
+        worker.job(JobSpec(foo)).run()
+    except SomeError:
+        pass
+    assert wk_journal.get_record(f'{worker.idempotent_key}_1').status == JobStatus.FAILED
 
 
 def test_worker_run_compensate(worker):
     x = 42
     compensate_check = 0
 
-    def foo(_x: str) -> None:
+    def foo(_x: int) -> None:
         nonlocal compensate_check
-        compensate_check = int(_x)
+        compensate_check = _x
 
-    worker.job(run_in_worker, x).with_compensation(foo).run()
+    worker.job(JobSpec(lambda: None))\
+        .with_compensation(JobSpec(foo, x)).run()
     worker.compensate()
     assert compensate_check == x
 
@@ -60,20 +64,20 @@ def test_worker_loop(worker):
     x = 10
     results = []
     for i in range(x):
-        results.append(worker.job(run_in_worker, i).run())
-    assert results == [str(i) for i in range(x)]
+        results.append(worker.job(JobSpec(lambda _i: _i, i)).run())
+    assert results == list(range(x))
 
 
 def test_worker_loop_compensate(worker):
     x = 42
     compensate_check = 0
 
-    def foo(_x: str) -> None:
+    def foo(_x: int) -> None:
         nonlocal compensate_check
-        compensate_check += int(_x)
-
+        compensate_check += _x
     for i in range(1, x+1):
-        worker.job(run_in_worker, i).with_compensation(foo).run()
+        worker.job(JobSpec(lambda: None))\
+            .with_compensation(JobSpec(foo, i)).run()
     worker.compensate()
 
     assert compensate_check == x**2/2 + x/2
@@ -88,50 +92,52 @@ def test_worker_no_compensate_if_no_run(worker):
         compensate_check += _x
 
     for i in range(1, x + 1):
-        worker.job(run_in_worker, i).with_compensation(foo)
+        worker.job(JobSpec(lambda: None))\
+            .with_compensation(JobSpec(foo, i))
     worker.compensate()
 
     assert compensate_check == 0, ('Метод `with_compensation` не должен добавлять компенсацию, '
                                    'если функция не была запущена.')
 
 
+events = SagaEvents()
+always_ok_event = EventSpec('always_ok_event', model_in=Ok, model_out=Ok)
+always_ok_sleep_event = EventSpec('always_ok_sleep_event', model_in=Ok, model_out=Ok)
+
+
+@events.entry(always_ok_event)
+def always_ok(uuid: UUID, want: Ok) -> Ok:
+    return want
+
+
+@events.entry(always_ok_sleep_event)
+def always_ok_sleep(uuid: UUID, want: Ok) -> Ok:
+    time.sleep(want.ok / 1000)
+    return want
+
+
 def test_worker_event_send(worker, communication_fk):
 
-    events = SagaEvents()
-    spec = EventSpec('', model_in=Ok, model_out=Ok)
-    event_delivered = False
+    lis = communication_fk.listener(events)
+    lis.run_in_thread()
+    time.sleep(0.05)  # wait to wake up
+    result = worker.event_job(JobSpec(always_ok_event.make, Ok(ok=12)), timeout=1).run()
+    lis.shutdown()
 
-    @events.entry(spec)
-    def receiver(*args) -> Ok:
-        nonlocal event_delivered
-        event_delivered = True
-        return Ok(ok=10)
-
-    def event() -> Event[Ok, Ok]:
-        return spec.make(Ok())
-
-    communication_fk.listener(events).run_in_thread()
-    time.sleep(0.05)  # wait socket to wake up
-    result = worker.event_job(event).run()
-
-    assert event_delivered, 'Событий должно быть доставлено принимающей стороне.'
-    assert result.ok == 10
+    assert result.ok == 12, 'Событий должно быть доставлено принимающей стороне.'
 
 
 def test_worker_not_an_event_send(worker):
-    result = worker.event_job(lambda: NotAnEvent()).run()
+    result = worker.event_job(JobSpec(lambda: NotAnEvent())).run()
     assert isinstance(result, Ok), 'Событие NotAnEvent должно возвращать Ok.'
 
 
-def test_worker_not_an_event_comp(worker):
-    compensation_run = False
+def test_worker_event_comp(worker, communication_fk):
+    lis = communication_fk.listener(events)
+    lis.run_in_thread()
 
-    def comp(_: Ok) -> NotAnEvent:
-        nonlocal compensation_run
-        compensation_run = True
-        return NotAnEvent()
-
-    worker.event_job(lambda: NotAnEvent()).with_compensation(comp).run()
+    with pytest.raises(TimeoutError):
+        worker.event_job(JobSpec(always_ok_sleep_event.make, Ok(ok=200)), timeout=0.1)\
+            .with_compensation(JobSpec(always_ok_event.make, Ok())).run()
     worker.compensate()
-
-    assert not compensation_run, 'Компенсационная функция для NotAnEvent не должна запускаться.'
+    lis.shutdown()

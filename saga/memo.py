@@ -1,10 +1,11 @@
 import base64
 import functools
 import pickle
+import time
 from typing import Any, Callable, List, ParamSpec, TypeVar
 
 from saga.journal import WorkerJournal
-from saga.models import JobStatus
+from saga.models import JobRecord, JobStatus
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -24,6 +25,10 @@ def object_from_bytes(b: bytes) -> Any:
     return pickle.loads(base64.b64decode(b))
 
 
+class NotEnoughRetries(Exception):
+    pass
+
+
 class Memoized:
     """
     Memoized используется для сохранения результата работы функции.
@@ -38,44 +43,64 @@ class Memoized:
         self._obj_to_b = obj_to_b
         self._obj_from_b = obj_from_b
 
-    def _next_op_id(self) -> str:
-        self._operation_id += 1
-        return f'{self._memo_prefix}_{self._operation_id}'
-
     def forget_done(self) -> None:
         """
         Удалить все сохраненные результаты работы.
         """
         self._journal.delete_records(*self._done)
 
-    def memoize(self, f: Callable[P, T]) -> Callable[P, T]:
+    def memoize(self, f: Callable[P, T], retries: int = 1, retry_interval: float = 2.0) \
+            -> Callable[P, T]:
         """
         Декоратор функции f. После декорирования, возвращаемое значение функции будет сохранено.
         При повторном вызове f будет возвращен сохраненный результат вместо вызова функции.
+        :param f: Функция, результат которой будет сохранен.
+        :param retries: Количество возможных повторов функции в случае исключения. Если
+                        количество повторов 0, тогда будет поднято оригинальное исключение или
+                        NotEnoughRetries. Если retries=-1, тогда количество повторов не ограничено.
+        :param retry_interval: Интервал времени (в секундах), через который будет вызван повтор
+                               функции в случае исключения.
         """
         op_id = self._next_op_id()
+        if retries < 0:
+            retries = float('+inf')  # type: ignore[assignment]
 
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
-            record = self._journal.get_record(op_id)
-            if record is None:
-                record = self._journal.create_record(op_id)
-                self._done.append(record.idempotent_operation_id)
-            # FIXME: также нужно запомнить аргументы вызова, чтобы при запуске с другими
-            #  аргументами возвращался новый результат.
+            record = self._get_record(op_id)
             if record.status == JobStatus.DONE:
-                return object_from_bytes(record.result)  # type: ignore[no-any-return]
-            fields: List[str] = []
-            values: List[Any] = []
+                return self._obj_from_b(record.result)  # type: ignore[no-any-return]
+            if record.runs >= retries:
+                exc = self._obj_from_b(record.result)
+                if isinstance(exc, Exception):
+                    raise exc
+                raise NotEnoughRetries()
+            self._journal.update_record(record.idempotent_operation_id,
+                                        ['runs'],
+                                        [record.runs + 1])
             try:
                 r = f(*args, **kwargs)
-                fields.extend(['status', 'result'])
-                values.extend([JobStatus.DONE, object_to_bytes(r)])
+                self._journal.update_record(record.idempotent_operation_id,
+                                            ['status', 'result'],
+                                            [JobStatus.DONE, self._obj_to_b(r)])
+                self._done.append(record.idempotent_operation_id)
                 return r
-            except Exception:
-                fields.append('status')
-                values.append(JobStatus.FAILED)
-                raise
-            finally:
-                self._journal.update_record(record.idempotent_operation_id, fields, values)
+            except Exception as e:
+                self._journal.update_record(record.idempotent_operation_id,
+                                            ['status', 'result'],
+                                            [JobStatus.FAILED, self._obj_to_b(e)])
+                if record.runs < retries:
+                    time.sleep(retry_interval)
+                    return wrap(*args, **kwargs)
+                raise e
         return wrap
+
+    def _next_op_id(self) -> str:
+        self._operation_id += 1
+        return f'{self._memo_prefix}_{self._operation_id}'
+
+    def _get_record(self, op_id: str) -> JobRecord:
+        record = self._journal.get_record(op_id)
+        if record is None:
+            record = self._journal.create_record(op_id)
+        return record

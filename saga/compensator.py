@@ -13,9 +13,9 @@ class SagaCompensator:
     `SagaCompensator` может использоваться одновременно с одним `SagaWorker`.
     """
     def __init__(self) -> None:
-        self._compensations: List[JobSpec[..., None]] = []
+        self._compensations: List[JobSpec[None]] = []
 
-    def add_compensate(self, spec: JobSpec[Any, Any]) -> None:
+    def add_compensate(self, spec: JobSpec[Any]) -> None:
         """
         Добавить компенсационную функцию spec к существующим компенсациям.
         """

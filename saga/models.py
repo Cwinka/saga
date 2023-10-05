@@ -46,16 +46,18 @@ class SagaRecord(BaseModel):
 
 class JobRecord(BaseModel):
     idempotent_operation_id: str
-    """ A unique key of an operation inside saga. """
+    """ Уникальный ключ операции. """
     status: JobStatus = JobStatus.RUNNING
-    """ Current status of an operation. """
+    """ Текущий статус операции. """
     result: bytes = base64.b64encode(pickle.dumps(None))
-    """ Return content of an operation. """
+    """ Результат операции. """
+    runs: int = 0
+    """ Количество запусков. """
 
 
-class JobSpec(Generic[P, T]):
+class JobSpec(Generic[T]):
     """
-    Function specification. Used to create a specification of any function to run as needed.
+    Спецификация функции. Аналог функции `functools.partial`.
     """
     def __init__(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
         self.f = f
@@ -63,57 +65,41 @@ class JobSpec(Generic[P, T]):
         self._args: List[Any] = []
         self._orig_kwargs = kwargs
 
-    def with_arg(self, arg: Any) -> 'JobSpec[P, T]':
-        """
-        Adds argument arg as the first positional argument of the main function.
-        Use this method with care because there are no checks the main function can
-        accept arg argument.
-        :param arg: Any value to pass to the main function.
-        """
-        self._args.insert(0, arg)
-        return self
-
     def call(self) -> T:
         """
-        Execute the main function. Can be called multiple times.
-        :return: Result of the main function.
+        Выполнить основную функцию.
         """
         return self.f(*self._args, *self._orig_args, **self._orig_kwargs)
 
 
 class Event(Generic[In, Out]):
     """
-    Event is an object that route event and holds its data and models.
+    Событие, цель которого маршрутизация и хранение данных для передачи на удаленный хост.
     """
-    def __init__(self, name: str, rt_name: str, data: In, model_in: Type[In],
-                 model_out: Type[Out]):
+
+    def __init__(self, name: str, data: In, model_out: Type[Out]):
         """
-        :param name: Event name.
-        :param rt_name: Returning event name.
-        :param data: Instance of input data.
-        :param model_in: Input model of event.
-        :param model_out: Output model of event.
+        :param name: Имя события.
+        :param data: Входные данные события.
+        :param model_out: Тип данных, возвращаемых событием.
         """
         self.name = name
         self.data = data
-        self.model_in = model_in
         self.model_out = model_out
-        self.ret_name = rt_name
 
 
 class EventSpec(Generic[In, Out]):
     """
-    Event specification/factory object. It holds information about an event like its input and
-    output models.
-    Example of EventSpec:
+    Спецификация события, описывающее событие.
+    Пример спецификации:
 
         spec = EventSpec('create_it', InputModel, OutputModel)
 
-    EventSpec can be used to create an Event with annotated models:
+    Спецификация может быть использована для создания `Event` с аннотированными типами.
 
         spec.make(InputModel())
 
-    EventSpec can be used with a SagaEvents like this:
+    Спецификация может быть использована в `SagaEvents`:
 
         events = SagaEvents()
 
@@ -123,37 +109,35 @@ class EventSpec(Generic[In, Out]):
     """
     def __init__(self, name: str, model_in: Type[In], model_out: Type[Out]):
         """
-        :param name: Event name.
-        :param model_in: Input model of event.
-        :param model_out: Output model of event.
+        :param name: Имя события.
+        :param model_in: Входная модель события.
+        :param model_out: Выходная модель события.
         """
         self.name = name
         self.model_in = model_in
         self.model_out = model_out
-        self.ret_name = f'r_{name}'
 
     def make(self, inp: In) -> Event[In, Out]:
         """
-        Creates annotated Event with input data inp.
+        Создает аннотированные `Event` с данными `inp`.
         """
-        return Event(self.name, self.ret_name, inp, self.model_in, self.model_out)
+        return Event(self.name, inp, self.model_out)
 
 
 class NotAnEvent(Event[Ok, Ok]):
     """
-    Represents absent event, so it won't be sent by `SagaWorker`.
-    This event should be used in the `event` function of `SagaWorker`:
+    Событие, говорящее что события не существует.
+    Данное событие не будет отправлено при передаче его в `SagaWorker`:
 
         @idempotent_saga(...)
         def saga(worker: SagaWorker)
             result = worker.event(check_something, random.randint(0, 20)).run()
-            # result in case of `NotAnEvent` will be `Ok`.
+            # результат `NotAnEvent` будет `Ok`.
 
         def check_something(value: int)
             if value > 10:
-                return NotAnEvent()
+                return NotAnEvent()  # событие не будет отправлено `SagaWorker`
             return Event(...)
     """
     def __init__(self) -> None:
-        super().__init__('not_an_event', 'r_not_an_event', data=Ok(),
-                         model_in=Ok, model_out=Ok)
+        super().__init__('not_an_event', data=Ok(), model_out=Ok)

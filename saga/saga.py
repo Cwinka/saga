@@ -185,7 +185,9 @@ class SagaRunner:
                  cfk: Optional[CommunicationFactory] = None,
                  forget_done: bool = False,
                  model_to_b: Callable[[M], bytes] = model_to_initial_data,
-                 model_from_b: Callable[[Type[M], bytes], M] = model_from_initial_data):
+                 model_from_b: Callable[[Type[M], bytes], M] = model_from_initial_data,
+                 compensation_max_retries: int = 10, compensation_interval: float = 1,
+                 compensation_event_timeout: float = 5):
         """
         :param saga_journal: Журнал записей саг.
         :param worker_journal: Журнал записей шагов саги.
@@ -193,6 +195,12 @@ class SagaRunner:
         :param forget_done: Если True, после выполнения, все записи выполненной саги удаляться.
         :param model_to_b: Функция конвертации модели данных в байты.
         :param model_from_b: Функция конвертации байт в модель данных.
+        :param compensation_max_retries: Количество возможных повторов функции компенсации в случае
+                                 исключения в ней. Если количество повторов 0,
+                                 тогда будет поднято оригинальное исключение.
+        :param compensation_interval: Интервал времени в секундах, через который будет вызван повтор
+                                      функции компенсации в случае исключения.
+        :param compensation_event_timeout: Время ожидания события компенсации.
         """
         self._forget_done = forget_done
         self._cfk = cfk
@@ -200,6 +208,9 @@ class SagaRunner:
         self._saga_journal = saga_journal or MemorySagaJournal()
         self._model_to_b = model_to_b
         self._model_from_b = model_from_b
+        self._compensation_max_retries = compensation_max_retries
+        self._compensation_interval = compensation_interval
+        self._compensation_event_timeout = compensation_event_timeout
 
     def new(self, uuid: UUID, saga: Saga[M, T], data: M) -> SagaJob[T, M]:
         """
@@ -210,9 +221,14 @@ class SagaRunner:
         :param data: Входные данные саги.
         """
         assert hasattr(saga, SAGA_NAME_ATTR), self._not_a_saga_msg(saga)
-        worker = SagaWorker(uuid=uuid, saga_name=getattr(saga, SAGA_NAME_ATTR),
-                            journal=self._worker_journal, compensator=SagaCompensator(),
-                            sender=self._cfk.sender() if self._cfk is not None else None,)
+        worker = SagaWorker(uuid=uuid,
+                            saga_name=getattr(saga, SAGA_NAME_ATTR),
+                            journal=self._worker_journal,
+                            compensator=SagaCompensator(),
+                            sender=self._cfk.sender() if self._cfk is not None else None,
+                            compensation_max_retries=self._compensation_max_retries,
+                            compensation_interval=self._compensation_interval,
+                            compensation_event_timeout=self._compensation_event_timeout)
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
                        model_to_b=self._model_to_b)
 
