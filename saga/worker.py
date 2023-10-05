@@ -99,7 +99,9 @@ class SagaWorker:
     """
 
     def __init__(self, uuid: UUID, saga_name: str, journal: WorkerJournal,
-                 compensator: SagaCompensator, sender: Optional[EventSender]):
+                 compensator: SagaCompensator, sender: Optional[EventSender],
+                 compensation_max_retries: int = 10, compensation_interval: float = 1,
+                 compensation_event_timeout: float = 5):
         """
         :param uuid: Уникальный ключ `SagaWorker`.
         :param saga_name: Имя саги.
@@ -107,6 +109,12 @@ class SagaWorker:
         :param compensator: Объект `SagaCompensator` хранения компенсационных функций.
         :param sender: Объект `EventSender` для отправки событий,
                        если опущенный метод `event_job` не может быть использован.
+        :param compensation_max_retries: Количество возможных повторов функции компенсации в случае
+                                         исключения в ней. Если количество повторов 0,
+                                         тогда будет поднято оригинальное исключение.
+        :param compensation_interval: Интервал времени в секундах, через который будет вызван повтор
+                                      функции компенсации в случае исключения.
+        :param compensation_event_timeout: Время ожидания события компенсации.
         """
         self._uuid = uuid
         self._idempotent_key = join_key(uuid, saga_name)
@@ -114,6 +122,9 @@ class SagaWorker:
         self._sender = sender
         self._journal = journal
         self._compensate = compensator or SagaCompensator()
+        self._compensation_max_retries = compensation_max_retries
+        self._compensation_interval = compensation_interval
+        self._compensation_event_timeout = compensation_event_timeout
 
     @property
     def idempotent_key(self) -> str:
@@ -169,20 +180,24 @@ class SagaWorker:
         :param timeout: Время ожидания ответного события.
         """
         assert self._sender is not None, 'Не установлен отправитель событий.'
-        spec.f = self._memo.memoize(self._auto_send(spec.f, timeout=timeout),  # type: ignore[arg-type]
+        spec.f = self._memo.memoize(self._auto_send(spec.f,  # type: ignore[arg-type]
+                                                    timeout=timeout),
                                     retries=retries, retry_interval=retry_interval)
         return WorkerJob[Out, Event[Any, Any]](spec,  # type: ignore[arg-type]
                                                comp_set_callback=self._place_event_compensation)
 
     def _place_event_compensation(self, spec: JobSpec[Event[In, Ok]]) -> None:
         # FIXME: возможно стоит вынести 5 секунд в init.
-        spec.f = self._memo.memoize(self._auto_send(spec.f, timeout=5,  # type: ignore[arg-type]
+        spec.f = self._memo.memoize(self._auto_send(spec.f,  # type: ignore[arg-type]
+                                                    timeout=self._compensation_event_timeout,
                                                     cancel_previous_uuid=True),
-                                    retries=-1, retry_interval=1)
+                                    retries=self._compensation_max_retries,
+                                    retry_interval=self._compensation_interval)
         self._compensate.add_compensate(spec)
 
     def _place_compensation(self, spec: JobSpec[None]) -> None:
-        spec.f = self._memo.memoize(spec.f, retries=-1, retry_interval=1)
+        spec.f = self._memo.memoize(spec.f, retries=self._compensation_max_retries,
+                                    retry_interval=self._compensation_interval)
         self._compensate.add_compensate(spec)
 
     def _auto_send(self, f: Callable[P, Event[Any, Out]], timeout: float,
