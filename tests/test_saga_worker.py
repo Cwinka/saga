@@ -1,6 +1,7 @@
 import time
 
 import pytest
+from uuid import UUID
 
 from saga.events import SagaEvents
 from saga.models import NotAnEvent, Ok, JobSpec, Event, EventSpec, JobStatus
@@ -99,27 +100,31 @@ def test_worker_no_compensate_if_no_run(worker):
                                    'если функция не была запущена.')
 
 
+events = SagaEvents()
+always_ok_event = EventSpec('always_ok_event', model_in=Ok, model_out=Ok)
+always_ok_sleep_event = EventSpec('always_ok_sleep_event', model_in=Ok, model_out=Ok)
+
+
+@events.entry(always_ok_event)
+def always_ok(uuid: UUID, want: Ok) -> Ok:
+    return want
+
+
+@events.entry(always_ok_sleep_event)
+def always_ok_sleep(uuid: UUID, want: Ok) -> Ok:
+    time.sleep(want.ok / 1000)
+    return want
+
+
 def test_worker_event_send(worker, communication_fk):
 
-    events = SagaEvents()
-    spec = EventSpec('', model_in=Ok, model_out=Ok)
-    event_delivered = False
+    lis = communication_fk.listener(events)
+    lis.run_in_thread()
+    time.sleep(0.05)  # wait to wake up
+    result = worker.event_job(JobSpec(always_ok_event.make, Ok(ok=12)), timeout=1).run()
+    lis.shutdown()
 
-    @events.entry(spec)
-    def receiver(*args) -> Ok:
-        nonlocal event_delivered
-        event_delivered = True
-        return Ok(ok=10)
-
-    def event() -> Event[Ok, Ok]:
-        return spec.make(Ok())
-
-    communication_fk.listener(events).run_in_thread()
-    time.sleep(0.05)  # wait socket to wake up
-    result = worker.event_job(JobSpec(event)).run()
-
-    assert event_delivered, 'Событий должно быть доставлено принимающей стороне.'
-    assert result.ok == 10
+    assert result.ok == 12, 'Событий должно быть доставлено принимающей стороне.'
 
 
 def test_worker_not_an_event_send(worker):
@@ -128,26 +133,11 @@ def test_worker_not_an_event_send(worker):
 
 
 def test_worker_event_comp(worker, communication_fk):
-    events = SagaEvents()
-    spec = EventSpec('e', model_in=Ok, model_out=Ok)
-    comp_spec = EventSpec('c', model_in=Ok, model_out=Ok)
-    comp_delivered = False
-
-    @events.entry(comp_spec)
-    def comp(*args) -> Ok:
-        nonlocal comp_delivered
-        comp_delivered = True
-        return Ok()
-
-    @events.entry(spec)
-    def ev(*args):
-        time.sleep(0.2)
-        return Ok()
-
-    communication_fk.listener(events).run_in_thread()
+    lis = communication_fk.listener(events)
+    lis.run_in_thread()
 
     with pytest.raises(TimeoutError):
-        worker.event_job(JobSpec(spec.make, Ok()), timeout=0.1)\
-            .with_compensation(JobSpec(comp_spec.make, Ok())).run()
+        worker.event_job(JobSpec(always_ok_sleep_event.make, Ok(ok=200)), timeout=0.1)\
+            .with_compensation(JobSpec(always_ok_event.make, Ok())).run()
     worker.compensate()
-    assert comp_delivered, 'Событий компенсации должно быть доставлено принимающей стороне.'
+    lis.shutdown()
