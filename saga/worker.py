@@ -115,7 +115,7 @@ class SagaWorker:
         return WorkerJob[Out, Event[Any, Any]](spec,  # type: ignore[arg-type]
                                                comp_set_callback=self._place_event_compensation)
 
-    def _place_event_compensation(self, spec: JobSpec[Event[In, Ok]]) -> None:
+    def _place_event_compensation(self, spec: JobSpec[Event[Any, Ok]]) -> None:
         spec.f = self._memo.memoize(self._auto_send(spec.f,  # type: ignore[arg-type]
                                                     timeout=self._compensation_event_timeout,
                                                     cancel_previous_uuid=True),
