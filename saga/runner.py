@@ -105,20 +105,22 @@ class SagaRunner:
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
                        model_to_b=self._model_to_b)
 
-    def new_from(self, uuid: UUID, saga: Saga[M, T]) -> Optional[SagaJob[T, M]]:
+    def new_from(self, uuid: UUID, saga: Saga[M, T],
+                 _record: Optional[SagaRecord] = None) -> Optional[SagaJob[T, M]]:
         """
         Создать экземпляр `SagaJob` по существующей записи `SagaRecord`. Существующая запись
         `SagaRecord` говорит о том, что сага была запущена ранее, и может находиться в любом
         состоянии.
         """
         saga_name = self.get_saga_name(saga)
-        saga_f: Callable[[SagaWorker, M], T] = self.get_saga(saga_name)
-        record = self._saga_journal.get_saga(join_key(uuid, saga_name))
+        record = _record if _record is not None else self._saga_journal.get_saga(
+            join_key(uuid, saga_name)
+        )
         if record is None:
             return None
-        model = self._model_from_saga_f(saga_f)
-        logger.info(f'{self._r_prefix} Воссоздание контекста саги: SJ: {uuid} S: {saga_name}.')
-        return self.new(uuid, saga_f, model_from_initial_data(model, record.initial_data))
+        model = self._model_from_saga_f(saga)
+        logger.info(f'{self._r_prefix} Воссоздание саги: SJ: {uuid} S: {saga_name}.')
+        return self.new(uuid, saga, self._model_from_b(model, record.initial_data))
 
     def run_incomplete(self) -> int:
         """
@@ -127,13 +129,10 @@ class SagaRunner:
         """
         i = 0
         logger.info(f'{self._r_prefix} Перезапуск незавершенных саг.')
-        for i, saga in enumerate(self._saga_journal.get_incomplete_saga(), 1):
-            idempotent_key, saga_name = split_key(saga.idempotent_key)
+        for i, record in enumerate(self._saga_journal.get_incomplete_saga(), 1):
+            uuid, saga_name = split_key(record.idempotent_key)
             saga_f: Callable[[SagaWorker, M], Any] = self.get_saga(saga_name)
-            model = self._model_from_saga_f(saga_f)
-            self.new(
-                UUID(idempotent_key), saga_f, self._model_from_b(model, saga.initial_data)
-            ).run()
+            self.new_from(UUID(uuid), saga_f, _record=record).run()  # type: ignore[union-attr]
         return i
 
     @staticmethod
