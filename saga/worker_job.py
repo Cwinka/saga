@@ -1,5 +1,7 @@
-from typing import Callable, Optional, TypeVar, Generic, ParamSpec
+from typing import Callable, Generic, Optional, ParamSpec, TypeVar
+from uuid import UUID
 
+from saga.logger import logger
 from saga.models import JobSpec
 
 T = TypeVar('T')
@@ -33,28 +35,35 @@ class WorkerJob(Generic[T, C, P]):
     """
 
     def __init__(self, spec: JobSpec[T, P],
-                 comp_set_callback: CompensationCallback[C] = lambda *_: None) -> None:
+                 comp_set_callback: CompensationCallback[C] = lambda *_: None,
+                 uuid: Optional[UUID] = None, saga_name: str = 'unknown') -> None:
         """
         :param spec: Спецификация функции.
         :param comp_set_callback: Обратный вызов компенсации, вызывается перед выполнением spec
                                   и если установлена функция компенсации.
+        :param uuid: UUID `SagaWorker`.
+        :param saga_name: Имя саги.
         """
         self._spec = spec
         self._compensation_callback = comp_set_callback
         self._compensation_spec: Optional[JobSpec[C, ...]] = None
         self._run: bool = False
         self._crun: bool = False
+        self._lg_prefix = f'[WJ: {uuid or "unknown"} S: {saga_name}]'
 
     def run(self) -> T:
         """
-        Выполнить spec функцию. Метод можно выполнить только один раз.
+        Выполнить `spec` функцию. Метод можно вызвать только один раз.
 
-        :return: Результат spec функции.
+        :return: Результат `spec` функции.
         """
-        assert not self._run, 'Повторный вызов функции не позволен.'
+        assert not self._run, (f'{self._lg_prefix} Повторное использование '
+                               f'"{self.__class__.__name__}" для вызова '
+                               f'функции "{self._spec.name}" запрещено.')
         if self._compensation_spec:
             self._compensation_callback(self._compensation_spec)
         self._run = True
+        logger.info(f'{self._lg_prefix} Выполняется функция "{self._spec.name}".')
         return self._spec.call()
 
     def with_compensation(self, spec: JobSpec[C, P_2]) -> 'WorkerJob[T, C, P]':
@@ -65,6 +74,8 @@ class WorkerJob(Generic[T, C, P]):
         :return: Тот же объект `WorkerJob`.
         """
         self._compensation_spec = spec
+        logger.debug(f'{self._lg_prefix} Устанавливается компенсационная функция '
+                     f'"{self._compensation_spec.name}" для компенсации "{self._spec.name}".')
         return self
 
     def with_parametrized_compensation(self, compensation: Callable[P, C]) -> 'WorkerJob[T, C, P]':
@@ -78,6 +89,8 @@ class WorkerJob(Generic[T, C, P]):
         """
         self._compensation_spec = JobSpec(compensation, *self._spec.args,
                                           **self._spec.kwargs)
+        logger.debug(f'{self._lg_prefix} Устанавливается параметризованная компенсационная функция '
+                     f'"{self._compensation_spec.name}" для компенсации "{self._spec.name}".')
         return self
 
     def compensate(self) -> None:
@@ -87,6 +100,8 @@ class WorkerJob(Generic[T, C, P]):
         assert self._run, 'Функция не была вызвана. Нечего компенсировать.'
         assert not self._crun, 'Повторный вызов компенсационной функции не позволен.'
         if self._compensation_spec is not None:
+            logger.info(f'{self._lg_prefix} Выполняется компенсационная функция '
+                        f'"{self._compensation_spec.name}".')
             self._compensation_spec.call()
 
     def wc(self, spec: JobSpec[C, P_2]) -> 'WorkerJob[T, C, P]':

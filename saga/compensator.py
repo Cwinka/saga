@@ -1,5 +1,6 @@
 from typing import Any, List, ParamSpec
 
+from saga.logger import logger
 from saga.models import JobSpec
 
 P = ParamSpec('P')
@@ -29,4 +30,6 @@ class SagaCompensator:
         Может быть запущено только один раз. При повторном запуске не имеет эффекта.
         """
         while self._compensations:
-            self._compensations.pop().call()
+            comp = self._compensations.pop()
+            logger.info(f'[C] Выполнение функции компенсации "{comp.name}".')
+            comp.call()
