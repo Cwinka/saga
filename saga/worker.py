@@ -83,7 +83,7 @@ class SagaWorker:
         """
         Удалить все добавленные записи в журнал, позволяя запуск с тем же идемпотентным ключом.
         """
-        logger.info(f'{self._w_prefix} Удаление записей выполнение заданий из журнала.')
+        logger.info(f'{self._w_prefix} Удаление записей заданий из журнала.')
         self._memo.forget_done()
 
     def job(self, spec: JobSpec[T, P], retries: int = 1, retry_interval: float = 2.0)\
