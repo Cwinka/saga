@@ -1,12 +1,13 @@
 import inspect
-from typing import Dict, Callable, Any, Optional, Type, TypeVar
+from typing import Any, Callable, Dict, Optional, Type, TypeVar
 from uuid import UUID
 
 from saga.compensator import SagaCompensator
 from saga.events import CommunicationFactory
-from saga.journal import WorkerJournal, MemoryJournal, MemorySagaJournal, SagaJournal
-from saga.models import SagaRecord, M
-from saga.saga import model_to_initial_data, model_from_initial_data, Saga, SagaJob
+from saga.journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
+from saga.logger import logger
+from saga.models import M, SagaRecord
+from saga.saga import Saga, SagaJob, model_from_initial_data, model_to_initial_data
 from saga.worker import SagaWorker, join_key, split_key
 
 T = TypeVar('T')
@@ -48,6 +49,7 @@ class SagaRunner:
         runner.run_incomplete()  # возвращает количество запущенных саг.
     """
     _sagas: Dict[str, Callable[[SagaWorker, M], Any]] = {}
+    _r_prefix = '[R]'
 
     def __init__(self,
                  saga_journal: Optional[SagaJournal] = None,
@@ -90,22 +92,24 @@ class SagaRunner:
         :param saga: Зарегистрированная функция саги.
         :param data: Входные данные саги.
         """
-        assert hasattr(saga, SAGA_NAME_ATTR), self._not_a_saga_msg(saga)
+        saga_name = self.get_saga_name(saga)
         worker = SagaWorker(uuid=uuid,
-                            saga_name=getattr(saga, SAGA_NAME_ATTR),
+                            saga_name=saga_name,
                             journal=self._worker_journal,
                             compensator=SagaCompensator(),
                             sender=self._cfk.sender() if self._cfk is not None else None,
                             compensation_max_retries=self._compensation_max_retries,
                             compensation_interval=self._compensation_interval,
                             compensation_event_timeout=self._compensation_event_timeout)
+        logger.info(f'{self._r_prefix} Создание контекста саги: SJ: {uuid} S: {saga_name}.')
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
                        model_to_b=self._model_to_b)
 
     def new_from(self, uuid: UUID, saga: Saga[M, T]) -> Optional[SagaJob[T, M]]:
         """
-        Создать экземпляр SagaJob по существующей записи SagaRecord. Существующая запись SagaRecord
-        говорит о том, что сага была запущена ранее, и может находиться в любом состоянии.
+        Создать экземпляр `SagaJob` по существующей записи `SagaRecord`. Существующая запись
+        `SagaRecord` говорит о том, что сага была запущена ранее, и может находиться в любом
+        состоянии.
         """
         saga_name = self.get_saga_name(saga)
         saga_f: Callable[[SagaWorker, M], T] = self.get_saga(saga_name)
@@ -113,6 +117,7 @@ class SagaRunner:
         if record is None:
             return None
         model = self._model_from_saga_f(saga_f)
+        logger.info(f'{self._r_prefix} Воссоздание контекста саги: SJ: {uuid} S: {saga_name}.')
         return self.new(uuid, saga_f, model_from_initial_data(model, record.initial_data))
 
     def run_incomplete(self) -> int:
@@ -121,6 +126,7 @@ class SagaRunner:
         выполнение.
         """
         i = 0
+        logger.info(f'{self._r_prefix} Перезапуск незавершенных саг.')
         for i, saga in enumerate(self._saga_journal.get_incomplete_saga(), 1):
             idempotent_key, saga_name = split_key(saga.idempotent_key)
             saga_f: Callable[[SagaWorker, M], Any] = self.get_saga(saga_name)
@@ -145,6 +151,7 @@ class SagaRunner:
         """
         Зарегистрировать функцию saga с именем name.
         """
+        logger.debug(f'{cls._r_prefix} Регистрация саги "{name}".')
         setattr(saga, SAGA_NAME_ATTR, name)
         cls._sagas[name] = saga
 
