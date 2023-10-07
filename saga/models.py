@@ -58,18 +58,19 @@ class JobRecord(BaseModel):
 
 
 class JobSpec(Generic[T, P]):
-    """
-    Спецификация функции. Аналог функции `functools.partial`.
-    """
+    """Спецификация функции. Аналог функции `functools.partial`."""
     def __init__(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
         self.f = f
         self.args = args
         self.kwargs = kwargs
 
+    @property
+    def name(self) -> str:
+        """Имя основной функции."""
+        return self.f.__name__
+
     def call(self) -> T:
-        """
-        Выполнить основную функцию.
-        """
+        """Выполнить основную функцию."""
         return self.f(*self.args, **self.kwargs)
 
 
