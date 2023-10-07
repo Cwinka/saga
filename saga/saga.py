@@ -126,13 +126,16 @@ class SagaJob(Generic[T, M]):
             try:
                 fields.append('status')
                 values.append(JobStatus.DONE)
-                return f(*args, **kwargs)
+                r = f(*args, **kwargs)
+                logger.info(f'{self._s_prefix} Сага успешно завершена.')
+                return r
             except Exception as e:
                 fields.extend(['status', 'failed_time', 'error', 'traceback'])
                 values.extend([JobStatus.FAILED, datetime.datetime.now(), str(e),
                                traceback.format_exc()])
                 logger.error(f'{self._s_prefix} Необработанное исключение в саге: {e}')
                 self._worker.compensate()
+                logger.info(f'{self._s_prefix} Сага завершена с исключением.')
                 raise
             finally:
                 self._journal.update_saga(saga.idempotent_key, fields, values)
