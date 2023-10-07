@@ -10,8 +10,9 @@ from typing import Any, Concatenate, Generic, List, Optional, ParamSpec, Type, T
 from pydantic import BaseModel
 
 from saga.journal import SagaJournal
-from saga.models import JobStatus, SagaRecord, M
-from saga.worker import SagaWorker
+from saga.logger import logger
+from saga.models import JobStatus, M, SagaRecord
+from saga.worker import SagaWorker, split_key
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -74,6 +75,8 @@ class SagaJob(Generic[T, M]):
         self._data = data
         self._model_to_b = model_to_b
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
+        uuid, saga_name = split_key(worker.idempotent_key)
+        self._s_prefix = f'[SJ: {uuid} S: {saga_name}]'
 
     @property
     def data(self) -> M:
@@ -87,6 +90,7 @@ class SagaJob(Generic[T, M]):
             saga = self._get_saga()
             self._journal.update_saga(saga.idempotent_key, ['initial_data'],
                                       [self._model_to_b(self._data)])
+            logger.info(f'{self._s_prefix} Запуск саги.')
             self._result = self._pool.apply_async(self._f_with_compensation,
                                                   args=(self._worker, self._data))
 
@@ -100,6 +104,7 @@ class SagaJob(Generic[T, M]):
         if self._result is None:
             self.run()
         assert self._result is not None
+        logger.info(f'{self._s_prefix} Ожидание завершения саги.')
         return self._result.get(timeout)
 
     def _get_saga(self) -> SagaRecord:
@@ -126,6 +131,7 @@ class SagaJob(Generic[T, M]):
                 fields.extend(['status', 'failed_time', 'error', 'traceback'])
                 values.extend([JobStatus.FAILED, datetime.datetime.now(), str(e),
                                traceback.format_exc()])
+                logger.error(f'{self._s_prefix} Необработанное исключение в саге: {e}')
                 self._worker.compensate()
                 raise
             finally:
