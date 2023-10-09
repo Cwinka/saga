@@ -1,13 +1,12 @@
-import functools
-from typing import Any, Callable, Optional, ParamSpec, Tuple, TypeVar
+from typing import Any, Optional, ParamSpec, Tuple, TypeVar
 from uuid import UUID
 
 from saga.compensator import SagaCompensator
-from saga.events import EventSender
+from saga.events import EventSender, auto_send
 from saga.journal import WorkerJournal
 from saga.logger import logger
 from saga.memo import Memoized
-from saga.models import Event, In, JobSpec, NotAnEvent, Ok, Out
+from saga.models import Event, In, JobSpec, Ok, Out
 from saga.worker_job import WorkerJob
 
 P = ParamSpec('P')
@@ -116,8 +115,10 @@ class SagaWorker:
         :param timeout: Время ожидания ответного события.
         """
         assert self._sender is not None, 'Не установлен отправитель событий.'
-        spec.f = self._memo.memoize(self._auto_send(spec.f,  # type: ignore[arg-type]
-                                                    timeout=timeout),
+        spec.f = self._memo.memoize(auto_send(self._sender,  # type: ignore[arg-type]
+                                              self._uuid,
+                                              spec.f,
+                                              timeout),
                                     retries=retries, retry_interval=retry_interval)
         logger.debug(f'{self._w_prefix} Создание событийного задания с функцией "{spec.name}".')
         return WorkerJob[Out, Event[Any, Any], P](spec,  # type: ignore[arg-type]
@@ -125,9 +126,11 @@ class SagaWorker:
                                                   uuid=self._uuid, saga_name=self._saga_name)
 
     def _place_event_compensation(self, spec: JobSpec[Event[Any, Ok], ...]) -> None:
-        spec.f = self._memo.memoize(self._auto_send(spec.f,  # type: ignore[arg-type]
-                                                    timeout=self._compensation_event_timeout,
-                                                    cancel_previous_uuid=True),
+        spec.f = self._memo.memoize(auto_send(self._sender,  # type: ignore[arg-type]
+                                              self._uuid,
+                                              spec.f,
+                                              self._compensation_event_timeout,
+                                              True),
                                     retries=self._compensation_max_retries,
                                     retry_interval=self._compensation_interval)
         logger.debug(f'{self._w_prefix} Добавление событийного задания компенсации "{spec.name}".')
@@ -138,18 +141,6 @@ class SagaWorker:
                                     retry_interval=self._compensation_interval)
         logger.debug(f'{self._w_prefix} Добавление простого задания компенсации "{spec.name}".')
         self._compensate.add_compensate(spec)
-
-    def _auto_send(self, f: Callable[P, Event[Any, Out]], timeout: float,
-                   cancel_previous_uuid: bool = False) -> Callable[P, Out]:
-        @functools.wraps(f)
-        def wrap(*args: P.args, **kwargs: P.kwargs) -> Out:
-            assert self._sender is not None, 'Не установлен отправитель событий.'
-            event = f(*args, **kwargs)
-            if isinstance(event, NotAnEvent):
-                return Ok()  # type: ignore[return-value]
-            self._sender.send(self._uuid, event, cancel_previous_uuid=cancel_previous_uuid)
-            return self._sender.wait(self._uuid, event, timeout=timeout)
-        return wrap
 
 
 def join_key(uuid: UUID, saga_name: str) -> str:
