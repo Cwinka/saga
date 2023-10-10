@@ -82,6 +82,10 @@ class SagaJob(Generic[T, M]):
     def data(self) -> M:
         return self._data
 
+    @property
+    def running(self) -> bool:
+        return self._result is not None and not self._result.ready()
+
     def run(self) -> None:
         """
         Запустить сагу. Не блокирующий метод.

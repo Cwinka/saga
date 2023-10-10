@@ -1,4 +1,5 @@
 import random
+import time
 import uuid
 
 import pytest
@@ -86,3 +87,26 @@ def test_saga_job_compensation(worker, saga_journal):
 
     assert compensation_check == (x**2/2 + x/2) - x, 'Все компенсационные функции должны быть ' \
                                                      'выполнены при исключении.'
+
+
+def test_saga_job_running_property_while_running(saga_journal, worker):
+    job = SagaJob(saga_journal, worker, lambda *_: time.sleep(1), Ok())
+
+    job.run()
+
+    assert job.running, 'Пока сага запущена, running свойство должно возвращать True.'
+
+
+def test_saga_job_running_property_when_finished(saga_journal, worker):
+    job = SagaJob(saga_journal, worker, lambda *_: None, Ok())
+
+    job.run()
+    job.wait()
+
+    assert not job.running, 'Когда сага завершена, running свойство должно возвращать False.'
+
+
+def test_saga_job_running_property_if_not_running(saga_journal, worker):
+    job = SagaJob(saga_journal, worker, lambda *_: None, Ok())
+
+    assert not job.running, 'Когда сага не запущена, running свойство должно возвращать False.'
