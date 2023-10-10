@@ -84,7 +84,13 @@ class SagaJob(Generic[T, M]):
 
     @property
     def running(self) -> bool:
+        """Возвращает True, если сага запущена."""
         return self._result is not None and not self._result.ready()
+
+    @property
+    def executed(self) -> bool:
+        """Возвращает True, если сага была запущена."""
+        return self._result is not None
 
     def run(self) -> None:
         """
