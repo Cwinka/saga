@@ -11,7 +11,7 @@ from uuid import UUID
 import redis
 from pydantic import BaseModel
 
-from saga.models import Event, EventSpec, In, Out
+from saga.models import Event, EventSpec, In, Out, NotAnEvent, Ok
 
 P = ParamSpec('P')
 EventMap = Dict[str, Tuple[Type[BaseModel],
@@ -89,6 +89,29 @@ class CommunicationFactory(ABC):
         """
         Объект отправителя событий, который отправляет события слушателю.
         """
+
+
+def auto_send(sender: EventSender, uuid: UUID,
+              f: Callable[P, Event[Any, Out]], timeout: float,
+              cancel_previous_uuid: bool = False) -> Callable[P, Out]:
+    """
+    Оборачивает функцию `f`, автоматически отправляя событие с помощью `sender` объекта и
+    возвращая результат.
+
+    :param sender: Отправитель событий.
+    :param uuid: Уникальный идентификатор операции.
+    :param f: Функция, возвращающее событие.
+    :param timeout: Максимальное время ожидания ответа.
+    :param cancel_previous_uuid: Отменить предыдущую операцию с таким же `uuid`.
+    """
+    @functools.wraps(f)
+    def wrap(*args: P.args, **kwargs: P.kwargs) -> Out:
+        event = f(*args, **kwargs)
+        if isinstance(event, NotAnEvent):
+            return Ok()  # type: ignore[return-value]
+        sender.send(uuid, event, cancel_previous_uuid=cancel_previous_uuid)
+        return sender.wait(uuid, event, timeout=timeout)
+    return wrap
 
 
 class SagaEvents:

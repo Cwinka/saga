@@ -101,8 +101,8 @@ def test_worker_no_compensate_if_no_run(worker):
 
 
 events = SagaEvents()
-always_ok_event = EventSpec('always_ok_event', model_in=Ok, model_out=Ok)
-always_ok_sleep_event = EventSpec('always_ok_sleep_event', model_in=Ok, model_out=Ok)
+always_ok_event = EventSpec[Ok, Ok]('always_ok_event', model_in=Ok, model_out=Ok)
+always_ok_sleep_event = EventSpec[Ok, Ok]('always_ok_sleep_event', model_in=Ok, model_out=Ok)
 
 
 @events.entry(always_ok_event)
@@ -141,3 +141,56 @@ def test_worker_event_comp(worker, communication_fk):
             .with_compensation(JobSpec(always_ok_event.make, Ok())).run()
     worker.compensate()
     lis.shutdown()
+
+
+def test_worker_empty_chain_run(worker):
+    chain = worker.chain(1)
+
+    result = chain.run()
+
+    assert result is None, 'Запуск цепочки заданий без добавленных заданий должен возвращать None.'
+
+
+def test_worker_chain_return_last_result(worker):
+    chain = worker.chain(1)
+
+    result = chain.add_job(lambda x: x + 1).add_job(lambda x: x + 2).run()
+
+    assert result == 3, 'Запуск цепочки заданий должен возвращать последний результат из цепочки.'
+
+
+def test_worker_chain_event_result(worker, communication_fk):
+    lis = communication_fk.listener(events)
+    lis.run_in_thread()
+    chain = worker.chain(10)
+
+    result = chain.add_event_job(lambda x: always_ok_event.make(Ok(ok=10))).run()
+
+    lis.shutdown()
+
+    assert result.ok == 10, ('Запуск цепочки заданий не возвращает ожидаемый результат после '
+                             'запуска события')
+
+
+def test_worker_chain_compensation_run_order(worker):
+    chain = worker.chain(2)
+
+    initial = 13
+    comp_check = initial
+    called = 0
+    def compensate(_x):
+        nonlocal comp_check, called
+        called += 1
+        if called % 2 == 0:
+            comp_check -= _x
+        else:
+            comp_check /= _x
+
+    chain\
+        .add_job(lambda _: None, compensation=compensate)\
+        .add_job(lambda _: None, compensation=compensate)\
+        .run()
+    worker.compensate()
+
+    assert initial / 2 - 2 == comp_check, ('Компенсационные задания в цепочке заданий запускаются '
+                                           'некорректно.')
