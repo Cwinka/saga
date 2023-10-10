@@ -110,3 +110,17 @@ def test_saga_job_running_property_if_not_running(saga_journal, worker):
     job = SagaJob(saga_journal, worker, lambda *_: None, Ok())
 
     assert not job.running, 'Когда сага не запущена, running свойство должно возвращать False.'
+
+
+def test_saga_job_executed_property_if_not_running(saga_journal, worker):
+    job = SagaJob(saga_journal, worker, lambda *_: None, Ok())
+
+    assert not job.executed, 'Когда сага не запущена, executed свойство должно возвращать False.'
+
+
+def test_saga_job_executed_property_if_run(saga_journal, worker):
+    job = SagaJob(saga_journal, worker, lambda *_: None, Ok())
+
+    job.run()
+
+    assert job.executed, 'Когда сага была запущена, executed свойство должно возвращать True.'
