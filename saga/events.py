@@ -180,7 +180,7 @@ class RedisEventSender(EventSender):
             for channel, messages in self._rd.xread(channels, 1, block=block_time_ms):
                 for _id, payload in messages:
                     self._rd.delete(return_channel)
-                    result = EventReturns.model_validate_json(payload)
+                    result = EventReturns.model_validate(payload)
                     if result.error:
                         raise EventRaisedException(result.error)
                     return event.model_out.model_validate_json(result.json_model)
