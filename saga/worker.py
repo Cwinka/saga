@@ -140,6 +140,10 @@ class SagaWorker:
                                                   uuid=self._uuid, saga_name=self._saga_name)
 
     def chain(self, input_data: InputData) -> 'WorkerParametrizedChain[InputData, None]':
+        """
+        Создать ``WorkerParametrizedChain``, цель которого объединить несколько функций в одну
+        цепочку функций.
+        """
         return WorkerParametrizedChain(self, input_data)
 
     def _place_event_compensation(self, spec: JobSpec[Event[Any, Ok], ...]) -> None:
