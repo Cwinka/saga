@@ -49,7 +49,7 @@ class SagaRunner:
         runner.run_incomplete()  # возвращает количество запущенных саг.
     """
     _sagas: Dict[str, Callable[[SagaWorker, M], Any]] = {}
-    _r_prefix = '[R]'
+    _r_prefix = '[Runner]'
 
     def __init__(self,
                  saga_journal: Optional[SagaJournal] = None,

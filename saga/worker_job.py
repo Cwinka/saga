@@ -49,7 +49,7 @@ class WorkerJob(Generic[T, C, P]):
         self._compensation_spec: Optional[JobSpec[C, ...]] = None
         self._run: bool = False
         self._crun: bool = False
-        self._lg_prefix = f'[WJ: {uuid or "unknown"} S: {saga_name}]'
+        self._lg_prefix = f'[Worker job: {uuid or "unknown"} Saga: {saga_name}]'
 
     def run(self) -> T:
         """
@@ -103,15 +103,3 @@ class WorkerJob(Generic[T, C, P]):
             logger.info(f'{self._lg_prefix} Выполняется компенсационная функция '
                         f'"{self._compensation_spec.name}".')
             self._compensation_spec.call()
-
-    def wc(self, spec: JobSpec[C, P_2]) -> 'WorkerJob[T, C, P]':
-        """
-        Сокращение для ``with_compensation``.
-        """
-        return self.with_compensation(spec)
-
-    def wpc(self, compensation: Callable[P, C]) -> 'WorkerJob[T, C, P]':
-        """
-        Сокращение для ``with_parametrized_compensation``.
-        """
-        return self.with_parametrized_compensation(compensation)

@@ -77,30 +77,14 @@ class SagaJob(Generic[T, M]):
         self._model_to_b = model_to_b
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
         uuid, saga_name = split_key(worker.idempotent_key)
-        self._s_prefix = f'[SJ: {uuid} S: {saga_name}]'
-
-    @property
-    def data(self) -> M:
-        return self._data
-
-    @property
-    def running(self) -> bool:
-        """Возвращает ``True``, если сага запущена."""
-        return self._result is not None and not self._result.ready()
-
-    @property
-    def executed(self) -> bool:
-        """Возвращает ``True``, если сага была запущена."""
-        return self._result is not None
+        self._s_prefix = f'[Saga job: {uuid} Saga: {saga_name}]'
 
     def run(self) -> None:
         """
         Запустить сагу. Не блокирующий метод.
         """
         if self._result is None:
-            saga = self._get_saga()
-            self._journal.update_saga(saga.idempotent_key, ['initial_data'],
-                                      [self._model_to_b(self._data)])
+            self._create_initial_saga_record()
             logger.info(f'{self._s_prefix} Запуск саги.')
             self._result = self._pool.apply_async(self._f_with_compensation,
                                                   args=(self._worker, self._data))
@@ -118,20 +102,19 @@ class SagaJob(Generic[T, M]):
         logger.info(f'{self._s_prefix} Ожидание завершения саги.')
         return self._result.get(timeout)
 
-    def _get_saga(self) -> SagaRecord:
-        record = self._journal.get_saga(self._worker.idempotent_key)
-        if record is None:
-            record = self._journal.create_saga(self._worker.idempotent_key)
-        return record
+    def _create_initial_saga_record(self) -> None:
+        self._journal.create_saga(self._worker.idempotent_key)
+        self._journal.update_saga(self._worker.idempotent_key,
+                                  ['initial_data'],
+                                  [self._model_to_b(self._data)])
 
-    def _compensate_on_exception(self, f: Callable[P, T]) -> Callable[Concatenate[bool, P], T]:
+    def _compensate_on_exception(self, f: Callable[P, T]) -> Callable[P, T]:
         """
         Оборачивает функцию ``f`` блоком try except, который запускает компенсационные функции
         при любом исключении внутри ``f``.
         """
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> T:
-            saga = self._get_saga()
             fields: List[str] = []
             values: List[Any] = []
             try:
@@ -149,8 +132,14 @@ class SagaJob(Generic[T, M]):
                 logger.info(f'{self._s_prefix} Сага завершена с исключением.')
                 raise
             finally:
-                self._journal.update_saga(saga.idempotent_key, fields, values)
-                if self._forget_done:
-                    self._journal.delete_sagas(saga.idempotent_key)
-                    self._worker.forget_done()
-        return wrap  # type: ignore[return-value]
+                record = self._journal.get_saga(self._worker.idempotent_key)
+                if record is None:
+                    logger.warning(f'{self._s_prefix} Запись в журнале о саге '
+                                   f'"{self._worker.idempotent_key}" не найдена. Невозможно '
+                                   f'обновить состояние саги.')
+                else:
+                    self._journal.update_saga(record.idempotent_key, fields, values)
+                    if self._forget_done:
+                        self._journal.delete_sagas(record.idempotent_key)
+                        self._worker.forget_done()
+        return wrap
