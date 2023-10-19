@@ -1,5 +1,6 @@
 from .compensator import SagaCompensator
-from .events import CommunicationFactory, RedisCommunicationFactory, SagaEvents
+from .events import CommunicationFactory, EventRaisedException, RedisCommunicationFactory, \
+    SagaEvents
 from .journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
 from .memo import NotEnoughRetries
 from .models import Event, EventSpec, JobRecord, JobSpec, JobStatus, NotAnEvent, Ok, SagaRecord
@@ -13,6 +14,7 @@ __all__ = [
     'SagaEvents',
     'CommunicationFactory',
     'RedisCommunicationFactory',
+    'EventRaisedException',
 
     'SagaJournal',
     'MemorySagaJournal',

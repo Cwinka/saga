@@ -19,6 +19,15 @@ EventMap = Dict[str, Tuple[Type[BaseModel],
                            Callable[[UUID, BaseModel], BaseModel]]]
 
 
+class EventReturns(BaseModel):
+    json_model: str
+    error: str = ''
+
+
+class EventRaisedException(Exception):
+    pass
+
+
 class EventSender(ABC):
     """
     `EventSender` отвечает за отправку событий в `EventListener`.
@@ -171,7 +180,10 @@ class RedisEventSender(EventSender):
             for channel, messages in self._rd.xread(channels, 1, block=block_time_ms):
                 for _id, payload in messages:
                     self._rd.delete(return_channel)
-                    return event.model_out.model_validate_json(payload['model'])
+                    result = EventReturns.model_validate(payload)
+                    if result.error:
+                        raise EventRaisedException(result.error)
+                    return event.model_out.model_validate_json(result.json_model)
             rest -= block_time_ms / 1000
         raise TimeoutError(f'Превышено время ожидания ответа сообщения в очереди '
                            f'"{return_channel}". Время ожидания: {timeout} сек.')
@@ -244,9 +256,23 @@ class RedisEventListener(EventListener):
         self._running_p[message.uuid] = future
 
     def _future_done(self, message: Message, future: Future[BaseModel]) -> None:
-        # TODO: обработать исключение в future
-        result = future.result(timeout=0.1)
-        self._rd.xadd(message.return_channel, {'model': result.model_dump_json()})
+        try:
+            model = future.result(timeout=0.1)
+        except Exception as e:
+            self._rd.xadd(message.return_channel,
+                          EventReturns(json_model='', error=str(e)).model_dump())
+            return
+
+        try:
+            json_model = model.model_dump_json()
+        except AttributeError as e:
+            err = f'Обработчик канала "{message.channel}" не вернул экземпляр pydantic модели: {e}'
+            self._rd.xadd(message.return_channel,
+                          EventReturns(json_model='', error=err).model_dump())
+            return
+
+        self._rd.xadd(message.return_channel,
+                      EventReturns(json_model=json_model).model_dump())
 
 
 class RedisCommunicationFactory(CommunicationFactory):

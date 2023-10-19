@@ -3,8 +3,8 @@ from uuid import UUID
 
 import pytest
 
-from saga.events import SagaEvents
-from saga.models import NotAnEvent, Ok, JobSpec, EventSpec, JobStatus
+from saga.events import EventRaisedException, SagaEvents
+from saga.models import EventSpec, JobSpec, JobStatus, NotAnEvent, Ok
 from saga.worker_job import WorkerJob
 
 
@@ -103,17 +103,23 @@ def test_worker_no_compensate_if_no_run(worker):
 events = SagaEvents()
 always_ok_event = EventSpec[Ok, Ok]('always_ok_event', model_in=Ok, model_out=Ok)
 always_ok_sleep_event = EventSpec[Ok, Ok]('always_ok_sleep_event', model_in=Ok, model_out=Ok)
+always_raise_event = EventSpec[Ok, Ok]('always_raise_event', model_in=Ok, model_out=Ok)
 
 
 @events.entry(always_ok_event)
-def always_ok(uuid: UUID, want: Ok) -> Ok:
+def always_ok(_: UUID, want: Ok) -> Ok:
     return want
 
 
 @events.entry(always_ok_sleep_event)
-def always_ok_sleep(uuid: UUID, want: Ok) -> Ok:
+def always_ok_sleep(_: UUID, want: Ok) -> Ok:
     time.sleep(want.ok / 1000)
     return want
+
+
+@events.entry(always_raise_event)
+def always_raise(_: UUID, data: Ok) -> Ok:
+    raise AttributeError('always_raise')
 
 
 def test_worker_event_send(worker, communication_fk):
@@ -194,3 +200,13 @@ def test_worker_chain_compensation_run_order(worker):
 
     assert initial / 2 - 2 == comp_check, ('Компенсационные задания в цепочке заданий запускаются '
                                            'некорректно.')
+
+
+def test_worker_event_raise_error_propagation(worker, communication_fk):
+    lis = communication_fk.listener(events)
+    lis.run_in_thread()
+    time.sleep(0.05)  # wait to wake up
+
+    with pytest.raises(EventRaisedException):
+        worker.event_job(JobSpec(always_raise_event.make, Ok(ok=12)), timeout=1).run()
+    lis.shutdown()
