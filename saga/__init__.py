@@ -4,7 +4,7 @@ from .events import CommunicationFactory, EventRaisedException, RedisCommunicati
 from .journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
 from .memo import NotEnoughRetries
 from .models import Event, EventSpec, JobRecord, JobSpec, JobStatus, NotAnEvent, Ok, SagaRecord
-from .runner import SagaRunner, idempotent_saga
+from .runner import SagaRunner
 from .saga import SagaJob
 from .worker import SagaWorker
 
@@ -31,7 +31,6 @@ __all__ = [
     'JobSpec',
 
     'SagaRunner',
-    'idempotent_saga',
 
     'SagaWorker',
 

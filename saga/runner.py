@@ -167,23 +167,30 @@ class SagaRunner:
         setattr(saga, SAGA_NAME_ATTR, name)
         cls._sagas[name] = saga
 
-    @classmethod
-    def get_saga(cls, name: str) -> Saga[M, Any]:
+    def saga(self, name: str) -> Callable[[Saga[M, T]], Saga[M, T]]:
+        """
+        Декоратор для регистрации функции в качестве саги с именем ``name`` в ``SagaRunner``.
+        """
+        def decorator(f: Saga[M, T]) -> Saga[M, T]:
+            self.register_saga(name, f)
+            return f
+        return decorator
+
+    def get_saga(self, name: str) -> Saga[M, Any]:
         """
         Получить зарегистрированную функцию саги с именем name.
         """
-        saga = cls._sagas.get(name)
+        saga = self._sagas.get(name)
         assert saga is not None, (f'Сага "{name}" не найдена. Возможно: сагу переименовали, '
                                   f'но в базе данных осталось старое имя саги; сага '
                                   f'"{name}" не была запущена; сага "{name}" не зарегистрирована.')
         return saga
 
-    @classmethod
-    def get_saga_name(cls, saga: Saga[M, T]) -> str:
+    def get_saga_name(self, saga: Saga[M, T]) -> str:
         """
         Получить имя зарегистрированной саги saga.
         """
-        assert hasattr(saga, SAGA_NAME_ATTR), cls._not_a_saga_msg(saga)
+        assert hasattr(saga, SAGA_NAME_ATTR), self._not_a_saga_msg(saga)
         return getattr(saga, SAGA_NAME_ATTR)  # type: ignore[no-any-return]
 
     def get_saga_record_by_uid(self, idempotent_key: UUID, saga: Saga[M, Any]) \
@@ -195,26 +202,8 @@ class SagaRunner:
         key = join_key(idempotent_key, self.get_saga_name(saga))
         return self._saga_journal.get_saga(key)
 
-    def get_saga_record_by_wkey(self, worker_idempotent_key: str) -> Optional[SagaRecord]:
-        """
-        Получить запись о состоянии запущенной саги по идемпотентному ключу
-        worker_idempotent_key.
-        :param worker_idempotent_key: Идемпотентный ключ SagaWorker.
-        """
-        return self._saga_journal.get_saga(worker_idempotent_key)
-
-    @staticmethod
-    def _not_a_saga_msg(f: Callable[..., Any]) -> str:
+    def _not_a_saga_msg(self, f: Callable[..., Any]) -> str:
         return (f'Функция "{f.__name__}" не является сагой. '
-                f'Используйте декоратор "{idempotent_saga.__name__}"'
-                f' чтобы отметить функцию как сагу.')
+                f'Используйте декоратор "{self.saga.__name__}" '
+                f'чтобы отметить функцию как сагу.')
 
-
-def idempotent_saga(name: str) -> Callable[[Saga[M, T]], Saga[M, T]]:
-    """
-    Зарегистрировать функцию, как сагу, в ``SagaRunner`` с именем name.
-    """
-    def decorator(f: Saga[M, T]) -> Saga[M, T]:
-        SagaRunner.register_saga(name, f)
-        return f
-    return decorator
