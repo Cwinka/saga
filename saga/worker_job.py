@@ -13,7 +13,7 @@ CompensationCallback = Callable[[JobSpec[C, ...]], None]
 
 class WorkerJob(Generic[T, C, P]):
     """
-    `WorkerJob` унифицированный объект для запуска функций:
+    ``WorkerJob`` унифицированный объект для запуска функций:
 
         def any_function() -> int:
             ...
@@ -21,8 +21,8 @@ class WorkerJob(Generic[T, C, P]):
         job = WorkerJob(JobSpec(any_function))
         job.run()
 
-    Для того, чтобы откатить результат выполнения функции `any_function` необходимо добавить
-    компенсирующую функцию `any_function`:
+    Для того, чтобы откатить результат выполнения функции **any_function** необходимо добавить
+    компенсирующую функцию **any_function**:
 
         def rollback_any_function() -> None:
             ...
@@ -41,7 +41,7 @@ class WorkerJob(Generic[T, C, P]):
         :param spec: Спецификация функции.
         :param comp_set_callback: Обратный вызов компенсации, вызывается перед выполнением spec
                                   и если установлена функция компенсации.
-        :param uuid: UUID `SagaWorker`.
+        :param uuid: UUID ``SagaWorker``.
         :param saga_name: Имя саги.
         """
         self._spec = spec
@@ -53,9 +53,9 @@ class WorkerJob(Generic[T, C, P]):
 
     def run(self) -> T:
         """
-        Выполнить `spec` функцию. Метод можно вызвать только один раз.
+        Выполнить ``spec`` функцию. Метод можно вызвать только один раз.
 
-        :return: Результат `spec` функции.
+        :return: Результат ``spec`` функции.
         """
         assert not self._run, (f'{self._lg_prefix} Повторное использование '
                                f'"{self.__class__.__name__}" для вызова '
@@ -71,7 +71,7 @@ class WorkerJob(Generic[T, C, P]):
         Установить функцию компенсации.
 
         :param spec: Спецификации компенсационной функции.
-        :return: Тот же объект `WorkerJob`.
+        :return: Тот же объект ``WorkerJob``.
         """
         self._compensation_spec = spec
         logger.debug(f'{self._lg_prefix} Устанавливается компенсационная функция '
@@ -85,7 +85,7 @@ class WorkerJob(Generic[T, C, P]):
         компенсацию они придут пустыми.
 
         :param compensation: Компенсационная функция.
-        :return: Тот же объект `WorkerJob`.
+        :return: Тот же объект ``WorkerJob``.
         """
         self._compensation_spec = JobSpec(compensation, *self._spec.args,
                                           **self._spec.kwargs)
@@ -106,12 +106,12 @@ class WorkerJob(Generic[T, C, P]):
 
     def wc(self, spec: JobSpec[C, P_2]) -> 'WorkerJob[T, C, P]':
         """
-        Сокращение для `with_compensation`.
+        Сокращение для ``with_compensation``.
         """
         return self.with_compensation(spec)
 
     def wpc(self, compensation: Callable[P, C]) -> 'WorkerJob[T, C, P]':
         """
-        Сокращение для `with_parametrized_compensation`.
+        Сокращение для ``with_parametrized_compensation``.
         """
         return self.with_parametrized_compensation(compensation)

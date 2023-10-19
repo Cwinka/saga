@@ -8,12 +8,9 @@ P = ParamSpec('P')
 
 class SagaCompensator:
     """
-    `SagaCompensator` отвечает за временное хранение и запуск функций компенсации, которые были
+    ``SagaCompensator`` отвечает за временное хранение и запуск функций компенсации, которые были
     в него добавлены.
-    `SagaCompensator` активируется, если в функции `saga` произошло исключение.
-    При возникновении исключения сначала выполняются все функции компенсации
-    (в обратном порядке, в котором они были добавлены), а затем поднимается исключение.
-    `SagaCompensator` может использоваться одновременно с одним `SagaWorker`.
+    ``SagaCompensator`` может использоваться одновременно с одним ``SagaWorker``.
     """
     def __init__(self) -> None:
         self._compensations: List[JobSpec[None, ...]] = []
@@ -31,5 +28,5 @@ class SagaCompensator:
         """
         while self._compensations:
             comp = self._compensations.pop()
-            logger.info(f'[C] Выполнение функции компенсации "{comp.name}".')
+            logger.info(f'[Compensation] Выполнение функции компенсации "{comp.name}".')
             comp.call()

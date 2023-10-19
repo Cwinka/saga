@@ -16,7 +16,7 @@ SAGA_NAME_ATTR = '__saga_name__'
 
 class SagaRunner:
     """
-    SagaRunner - это фабричный класс, для создания объектов SagaJob.
+    ``SagaRunner`` - это фабричный класс, для создания объектов ``SagaJob``.
 
     Чтобы зарегистрировать функцию в качестве саги, существует два метода:
 
@@ -30,17 +30,17 @@ class SagaRunner:
             ...
         SagaRunner.register_saga('saga_name', my_saga)
 
-    Для создания саги используется метод `new`:
+    Для создания саги используется метод ``new``:
 
         runner = SagaRunner(...)
         saga = runner.new(UUID, my_saga, Ok())
 
-    Первым аргументом метода `new` является уникальный идемпотентный ключ, представленный в виде
-    любого UUID. Если сага запускается с используемым одного и того же идемпотентного ключа,
+    Первым аргументом метода ``new`` является уникальный идемпотентный ключ, представленный в виде
+    любого ``UUID``. Если сага запускается с используемым одного и того же идемпотентного ключа,
     сага вернет одинаковый результат для обоих запусков.
 
-    Любая запущенная сага может оказаться в незавершенном состоянии (ни в `SagaStatus.DONE`
-    ни в `SagaStatus.FAILED`, а в `SagaStatus.RUNNING` состоянии) из-за неожиданного завершения
+    Любая запущенная сага может оказаться в незавершенном состоянии (ни в ``SagaStatus.DONE``
+    ни в ``SagaStatus.FAILED``, а в ``SagaStatus.RUNNING`` состоянии) из-за неожиданного завершения
     работы программы. Незавершенные саги могут быть выполнены повторно:
 
         journal = SagaJournalImplementation()  # реализация журнала
@@ -96,7 +96,7 @@ class SagaRunner:
 
     def new(self, uuid: UUID, saga: Saga[M, T], data: M) -> SagaJob[T, M]:
         """
-        Создать новый объект `SagaJob`.
+        Создать новый объект ``SagaJob``.
 
         :param uuid: Уникальный ключ саги.
         :param saga: Зарегистрированная функция саги.
@@ -121,8 +121,8 @@ class SagaRunner:
     def new_from(self, uuid: UUID, saga: Saga[M, T],
                  _record: Optional[SagaRecord] = None) -> Optional[SagaJob[T, M]]:
         """
-        Создать экземпляр `SagaJob` по существующей записи `SagaRecord`. Существующая запись
-        `SagaRecord` говорит о том, что сага была запущена ранее, и может находиться в любом
+        Создать экземпляр ``SagaJob`` по существующей записи ``SagaRecord``. Существующая запись
+        ``SagaRecord`` говорит о том, что сага была запущена ранее, и может находиться в любом
         состоянии.
         """
         saga_name = self.get_saga_name(saga)
@@ -212,7 +212,7 @@ class SagaRunner:
 
 def idempotent_saga(name: str) -> Callable[[Saga[M, T]], Saga[M, T]]:
     """
-    Зарегистрировать функцию, как сагу, в `SagaRunner` с именем name.
+    Зарегистрировать функцию, как сагу, в ``SagaRunner`` с именем name.
     """
     def decorator(f: Saga[M, T]) -> Saga[M, T]:
         SagaRunner.register_saga(name, f)

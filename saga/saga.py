@@ -28,30 +28,31 @@ def model_to_initial_data(data: BaseModel) -> bytes:
 
 def model_from_initial_data(model: Type[M], data: bytes) -> M:
     """
-    Привести ascii байты data в модель model.
+    Привести ascii байты data в модель ``model``.
     """
     return model.model_validate_json(base64.b64decode(data).decode('utf8'))
 
 
 class SagaJob(Generic[T, M]):
     """
-    `SagaJob` - обертка для функции саги, которая позволяет сохранять состояние выполнения функции.
+    ``SagaJob`` - обертка для функции саги, которая позволяет сохранять состояние выполнения
+    функции.
 
-    Первым аргументом функции саги является объект `SagaWorker`.
-    Второй аргумент - это входные данные функции saga, наследуемые от `pydantic.BaseModel`.
-    Если функция саги не нуждается во входных данных, может быть использован класс `Ok`.
+    Первым аргументом функции саги является объект ``SagaWorker``.
+    Второй аргумент - это входные данные функции saga, наследуемые от ``pydantic.BaseModel``.
+    Если функция саги не нуждается во входных данных, может быть использован класс ``Ok``.
 
         def saga1(worker: SagaWorker, my_arg: int):
             pass
 
         job1 = SagaJob(saga2, SagaWorker('1'), 42)
 
-    `SagaJob.run`/`SagaJob.wait` используется для запуска/ожидания саг соответственно.
+    ``SagaJob.run``/``SagaJob.wait`` используется для запуска/ожидания саг соответственно.
 
         job1.run()
         job1.wait()  # метод "wait" автоматически вызовет "run", поэтому вызов "run" избыточен.
 
-    ВАЖНО: Метод `SagaJob.wait` может вернуть исключение, если оно происходит внутри саги.
+    ВАЖНО: Метод ``SagaJob.wait`` может вернуть исключение, если оно происходит внутри саги.
     """
 
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
@@ -63,7 +64,7 @@ class SagaJob(Generic[T, M]):
         :param journal: Журнал саги.
         :param worker: Обработчик функций саги.
         :param saga: Функция саги.
-        :param data: Входные данные саги, если данных нет, используется Ok.
+        :param data: Входные данные саги.
         :param forget_done: Если значение True, то по завершении все сохраненные записи журналов
                             удаляться и сага может быть запущена с тем же идемпотентным ключом.
         :param model_to_b: Функция конвертации модели данных в байты.
@@ -84,12 +85,12 @@ class SagaJob(Generic[T, M]):
 
     @property
     def running(self) -> bool:
-        """Возвращает True, если сага запущена."""
+        """Возвращает ``True``, если сага запущена."""
         return self._result is not None and not self._result.ready()
 
     @property
     def executed(self) -> bool:
-        """Возвращает True, если сага была запущена."""
+        """Возвращает ``True``, если сага была запущена."""
         return self._result is not None
 
     def run(self) -> None:
@@ -106,7 +107,7 @@ class SagaJob(Generic[T, M]):
 
     def wait(self, timeout: Optional[float] = None) -> T:
         """
-        Подождать выполнения саги. Автоматически вызывает "run".
+        Подождать выполнения саги. Автоматически вызывает ``run``.
 
         :param timeout: Время ожидания завершения выполнения в секундах.
         :return: Результат саги.
@@ -125,8 +126,8 @@ class SagaJob(Generic[T, M]):
 
     def _compensate_on_exception(self, f: Callable[P, T]) -> Callable[Concatenate[bool, P], T]:
         """
-        Оборачивает функцию f блоком try except, который запускает компенсационные функции
-        при любом исключении внутри f.
+        Оборачивает функцию ``f`` блоком try except, который запускает компенсационные функции
+        при любом исключении внутри ``f``.
         """
         @functools.wraps(f)
         def wrap(*args: P.args, **kwargs: P.kwargs) -> T:

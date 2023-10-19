@@ -58,7 +58,7 @@ class JobRecord(BaseModel):
 
 
 class JobSpec(Generic[T, P]):
-    """Спецификация функции. Аналог функции `functools.partial`."""
+    """Спецификация функции. Аналог функции ``functools.partial``."""
     def __init__(self, f: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
         self.f = f
         self.args = args
@@ -97,11 +97,11 @@ class EventSpec(Generic[In, Out]):
 
         spec = EventSpec('create_it', InputModel, OutputModel)
 
-    Спецификация может быть использована для создания `Event` с аннотированными типами.
+    Спецификация может быть использована для создания ``Event`` с аннотированными типами.
 
         spec.make(InputModel())
 
-    Спецификация может быть использована в `SagaEvents`:
+    Спецификация может быть использована в ``SagaEvents``:
 
         events = SagaEvents()
 
@@ -121,7 +121,7 @@ class EventSpec(Generic[In, Out]):
 
     def make(self, inp: In) -> Event[In, Out]:
         """
-        Создает аннотированные `Event` с данными `inp`.
+        Создает аннотированные ``Event`` с данными ``inp``.
         """
         return Event(self.name, inp, self.model_out)
 
@@ -129,16 +129,16 @@ class EventSpec(Generic[In, Out]):
 class NotAnEvent(Event[Ok, Ok]):
     """
     Событие, говорящее что события не существует.
-    Данное событие не будет отправлено при передаче его в `SagaWorker`:
+    Данное событие не будет отправлено при передаче его в ``SagaWorker``:
 
         @idempotent_saga(...)
         def saga(worker: SagaWorker)
             result = worker.event(check_something, random.randint(0, 20)).run()
-            # результат `NotAnEvent` будет `Ok`.
+            # результат ``NotAnEvent`` будет ``Ok``.
 
         def check_something(value: int)
             if value > 10:
-                return NotAnEvent()  # событие не будет отправлено `SagaWorker`
+                return NotAnEvent()  # событие не будет отправлено ``SagaWorker``
             return Event(...)
     """
     def __init__(self) -> None:

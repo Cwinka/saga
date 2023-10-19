@@ -18,11 +18,11 @@ def first_saga(worker: SagaWorker, data: DataForFirst) -> None:
     for _ in range(data.count):
         worker.job(JobSpec(lambda: print('Some work'))).run()
     if data.count > 5:
-        # Будет запущена `second_saga`, используя текущего `SagaWorker`.
+        # Будет запущена ``second_saga``, используя текущего ``SagaWorker``.
         # Все шаги в запущенной саге будут сохраняться аналогично, как и в этой.
-        # Перезапуск `first_saga`, в случае ошибки в second_saga, будет начат с последней успешной
-        # операции `SagaWorker`. Перезапуск только second_saga, используя `SagaWorker` с тем же
-        # идемпотентным ключом, как и для `first_saga`, невозможен.
+        # Перезапуск ``first_saga``, в случае ошибки в second_saga, будет начат с последней успешной
+        # операции ``SagaWorker``. Перезапуск только ``second_saga``, используя
+        # ``SagaWorker`` с тем же идемпотентным ключом, как и для ``first_saga``, невозможен.
         second_saga(worker, DataForSecond(times=data.count // 2))
 
 

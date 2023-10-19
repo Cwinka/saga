@@ -18,8 +18,8 @@ SAGA_KEY_SEPARATOR = '&'
 
 class SagaWorker:
     """
-    `SagaWorker` отвечает за создание `WorkerJob`.
-    `SagaWorker` создает точки сохранения для каждого запускаемого `WorkerJob`,
+    ``SagaWorker`` отвечает за создание ``WorkerJob``.
+    ``SagaWorker`` создает точки сохранения для каждого запускаемого ``WorkerJob``,
      а также собирает все компенсации, которые были в них добавлены.
 
          journal = WorkerJournal()  # журнал сохранения контрольных точек
@@ -36,12 +36,12 @@ class SagaWorker:
                  compensation_max_retries: int = 10, compensation_interval: float = 1,
                  compensation_event_timeout: float = 5):
         """
-        :param uuid: Уникальный ключ `SagaWorker`.
+        :param uuid: Уникальный ключ ``SagaWorker``.
         :param saga_name: Имя саги.
-        :param journal: Журнал для хранения результатов выполнения `WorkerJob`.
-        :param compensator: Объект `SagaCompensator` хранения компенсационных функций.
-        :param sender: Объект `EventSender` для отправки событий,
-                       если опущенный метод `event_job` не может быть использован.
+        :param journal: Журнал для хранения результатов выполнения ``WorkerJob``.
+        :param compensator: Объект ``SagaCompensator`` хранения компенсационных функций.
+        :param sender: Объект ``EventSender`` для отправки событий,
+                       если опущенный метод ``event_job`` не может быть использован.
         :param job_max_retries: Максимальное количество повторов задания. При указании больше чем
                                 1 задания должны быть идемпотентными.
         :param job_retry_interval: Время, через которое будет совершен повторный вызов задания в
@@ -72,14 +72,14 @@ class SagaWorker:
     @property
     def idempotent_key(self) -> str:
         """
-        Уникальный идемпотентный ключ `SagaWorker`.
+        Уникальный идемпотентный ключ ``SagaWorker``.
         """
         return self._idempotent_key
 
     @property
     def uuid(self) -> UUID:
         """
-        Уникальный идентификатор `SagaWorker`.
+        Уникальный идентификатор ``SagaWorker``.
         """
         return self._uuid
 
@@ -100,7 +100,7 @@ class SagaWorker:
     def job(self, spec: JobSpec[T, P], retries: Optional[int] = None,
             retry_interval: Optional[float] = None) -> WorkerJob[T, None, P]:
         """
-        Создать `WorkerJob` со спецификацией `spec`.
+        Создать ``WorkerJob`` со спецификацией ``spec``.
 
         :param spec: Спецификация функции.
         :param retries: Количество возможных повторов функции в случае исключения. Если
@@ -119,7 +119,7 @@ class SagaWorker:
                   retry_interval: Optional[float] = None, timeout: Optional[float] = None) \
             -> WorkerJob[Out, Event[Any, Any], P]:
         """
-        Создать `WorkerJob`, который отправляет возвращаемое событие и ожидает его результат.
+        Создать ``WorkerJob``, который отправляет возвращаемое событие и ожидает его результат.
 
         :param spec: Спецификация функции.
         :param retries: Количество возможных повторов функции в случае исключения. Если
@@ -167,7 +167,7 @@ class SagaWorker:
 def join_key(uuid: UUID, saga_name: str) -> str:
     """
     Вернуть строку, которую можно использовать для получения объекта
-    `SagaRecord` из `SagaJournal`.
+    ``SagaRecord`` из ``SagaJournal``.
     """
     return f'{uuid}{SAGA_KEY_SEPARATOR}{saga_name}'
 
@@ -179,7 +179,7 @@ def split_key(joined_key: str) -> Tuple[str, str]:
 
 class WorkerParametrizedChain(Generic[InputData, LastChainResult]):
     """
-    Коллекция заданий `WorkerJob`. Данный класс предназначен для более короткой записи тех заданий
+    Коллекция заданий ``WorkerJob``. Данный класс предназначен для более короткой записи тех заданий
     для которых входные данные одинаковы.
     К примеру задания записанные так:
 
@@ -189,7 +189,7 @@ class WorkerParametrizedChain(Generic[InputData, LastChainResult]):
             worker.job(JobSpec(do_2_on_file, file)).run()
             worker.job(JobSpec(do_3_on_file, file)).run()
 
-    Могут быть переписаны с помощью `WorkerParametrizedChain`:
+    Могут быть переписаны с помощью ``WorkerParametrizedChain``:
 
         def some_saga(worker: SagaWorker, ctx: ...):
             file = Path(...)
@@ -199,9 +199,9 @@ class WorkerParametrizedChain(Generic[InputData, LastChainResult]):
                 .add_job(do_3_on_file)\
                 .run()
 
-    Задания в цепочке выполняются друг за другом, а результат, который возвращает метод `run`
-    извлекается из последнего в цепочке задания.
-    Правила для компенсационных заданий такие же как и в `WorkerJob`.
+    Задания в цепочке выполняются друг за другом, а результат, который возвращает метод ``run``
+    извлекается из последнего в цепочке задания. Правила для компенсационных заданий
+    такие же как и в ``WorkerJob``.
     """
     def __init__(self,
                  worker: SagaWorker,
@@ -216,11 +216,11 @@ class WorkerParametrizedChain(Generic[InputData, LastChainResult]):
                 retries: Optional[int] = None, retry_interval: Optional[float] = None)\
             -> 'WorkerParametrizedChain[InputData, T]':
         """
-        Добавить задание `job` в цепочку заданий. Задания будут выполнены в том порядке,
+        Добавить задание ``job`` в цепочку заданий. Задания будут выполнены в том порядке,
         в котором они добавляются.
 
         :param job: Задание, принимающее на вход установленные данные.
-        :param compensation: Компенсирующее эффекты задания `job` задание.
+        :param compensation: Компенсирующее эффекты задания ``job`` задание.
         :param retries: Максимальное количество повторов задания в случае ошибки.
         :param retry_interval: Интервал повтора задания в случае ошибки.
         """
@@ -238,11 +238,11 @@ class WorkerParametrizedChain(Generic[InputData, LastChainResult]):
                       timeout: Optional[float] = None) -> \
             'WorkerParametrizedChain[InputData, Out]':
         """
-        Добавить событийное задание `job` в цепочку заданий. Задания будут выполнены в том порядке,
-        в котором они добавляются.
+        Добавить событийное задание ``job`` в цепочку заданий. Задания будут выполнены в
+        том порядке, в котором они добавляются.
 
         :param job: Задание, принимающее на вход установленные данные.
-        :param compensation: Компенсирующее эффекты задания `job` задание.
+        :param compensation: Компенсирующее эффекты задания ``job`` задание.
         :param retries: Максимальное количество повторов задания в случае ошибки.
         :param retry_interval: Интервал повтора задания в случае ошибки.
         :param timeout: Время ожидания ответа на отправленное событие.
