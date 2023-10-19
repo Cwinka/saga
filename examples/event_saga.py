@@ -1,12 +1,11 @@
 import random
-import tempfile
 import uuid
 
 import redis
 from pydantic import BaseModel
 
-from saga import Event, EventSpec, Ok, SagaEvents, SagaRunner, \
-    SagaWorker, idempotent_saga, RedisCommunicationFactory, JobSpec
+from saga import Event, EventSpec, JobSpec, Ok, RedisCommunicationFactory, SagaEvents, SagaRunner, \
+    SagaWorker
 
 
 # shared part
@@ -46,7 +45,6 @@ def roll_event() -> Event[Foo, Ok]:
     return RollEv.make(Foo(foo='12'))
 
 
-@idempotent_saga('saga')
 def saga_2(worker: SagaWorker, _: Ok) -> None:
     print(
         worker.event_job(JobSpec(event), timeout=1).with_compensation(JobSpec(roll_event)).run()
@@ -60,4 +58,5 @@ if __name__ == '__main__':
     cfk.listener(events).run_in_thread()
 
     runner = SagaRunner(cfk=cfk)
+    runner.register_saga('saga', saga_2)
     runner.new(uuid.uuid4(), saga_2, Ok()).wait()
