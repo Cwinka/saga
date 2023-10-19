@@ -67,7 +67,7 @@ class SagaWorker:
         self._compensation_max_retries = compensation_max_retries
         self._compensation_interval = compensation_interval
         self._compensation_event_timeout = compensation_event_timeout
-        self._w_prefix = f'[W: {uuid} S: {saga_name}]'
+        self._w_prefix = f'[Saga worker: {uuid} Saga: {saga_name}]'
 
     @property
     def idempotent_key(self) -> str:

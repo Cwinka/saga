@@ -49,7 +49,7 @@ class WorkerJob(Generic[T, C, P]):
         self._compensation_spec: Optional[JobSpec[C, ...]] = None
         self._run: bool = False
         self._crun: bool = False
-        self._lg_prefix = f'[WJ: {uuid or "unknown"} S: {saga_name}]'
+        self._lg_prefix = f'[Worker job: {uuid or "unknown"} Saga: {saga_name}]'
 
     def run(self) -> T:
         """

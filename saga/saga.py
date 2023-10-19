@@ -77,7 +77,7 @@ class SagaJob(Generic[T, M]):
         self._model_to_b = model_to_b
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
         uuid, saga_name = split_key(worker.idempotent_key)
-        self._s_prefix = f'[SJ: {uuid} S: {saga_name}]'
+        self._s_prefix = f'[Saga job: {uuid} Saga: {saga_name}]'
 
     def run(self) -> None:
         """
