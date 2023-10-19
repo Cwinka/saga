@@ -2,7 +2,7 @@ import uuid
 
 from pydantic import BaseModel
 
-from saga import SagaRunner, SagaWorker, idempotent_saga, JobSpec
+from saga import SagaRunner, SagaWorker, JobSpec
 
 
 class DataForFirst(BaseModel):
@@ -13,7 +13,6 @@ class DataForSecond(BaseModel):
     times: int
 
 
-@idempotent_saga('first')
 def first_saga(worker: SagaWorker, data: DataForFirst) -> None:
     for _ in range(data.count):
         worker.job(JobSpec(lambda: print('Some work'))).run()
@@ -26,7 +25,6 @@ def first_saga(worker: SagaWorker, data: DataForFirst) -> None:
         second_saga(worker, DataForSecond(times=data.count // 2))
 
 
-@idempotent_saga('second')
 def second_saga(worker: SagaWorker, data: DataForSecond) -> None:
     for _ in range(data.times):
         worker.job(JobSpec(lambda: print('Some other work'))).run()
@@ -34,8 +32,13 @@ def second_saga(worker: SagaWorker, data: DataForSecond) -> None:
 
 def main() -> None:
     runner = SagaRunner()
+    runner.register_saga('first', first_saga)
+    runner.register_saga('second', second_saga)
+    uid = uuid.uuid4()
+    runner.new(uid, first_saga, DataForFirst(count=10)).wait()
 
-    runner.new(uuid.uuid4(), first_saga, DataForFirst(count=10)).wait()
+    assert runner.get_saga_record_by_uid(uid, first_saga) is not None
+    assert runner.get_saga_record_by_uid(uid, second_saga) is None
 
 
 if __name__ == '__main__':

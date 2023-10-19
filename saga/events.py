@@ -147,12 +147,13 @@ class SagaEvents:
         Зарегистрированные спецификации могут быть получены методом ``handlers``.
         """
         def wrap(f: Callable[[UUID, In], Out]) -> Callable[[UUID, In], Out]:
-            @functools.wraps(f)
-            def inner(uuid: UUID, data: In) -> Out:
-                return f(uuid, data)
-            self._handlers[spec] = inner
-            return inner
+            self.add_entry(spec, f)
+            return f
         return wrap
+
+    def add_entry(self, spec: EventSpec[In, Out], entrypoint: [Callable[[UUID, In], Out]]) -> None:
+        assert self._handlers.get(spec) is None, f'Обработкик события "{spec.name}" уже существует.'
+        self._handlers[spec] = entrypoint
 
 
 class RedisEventSender(EventSender):

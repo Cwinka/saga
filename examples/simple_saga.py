@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from saga import SagaRunner, SagaWorker, idempotent_saga
+from saga import SagaRunner, SagaWorker
 from saga.models import JobSpec
 
 
@@ -13,7 +13,6 @@ class SpecData(BaseModel):
     path: Path
 
 
-@idempotent_saga('spec')
 def create_spec_in_directory(worker: SagaWorker, data: SpecData) -> None:
     for i in range(10):
         file = data.path / str(i)
@@ -38,6 +37,7 @@ def main() -> None:
     path.mkdir(exist_ok=True)
 
     runner = SagaRunner()
+    runner.register_saga('any_name', create_spec_in_directory)
     try:
         runner.new(uuid.uuid4(), create_spec_in_directory, SpecData(path=path)).wait()
     except AttributeError:
