@@ -103,15 +103,3 @@ class WorkerJob(Generic[T, C, P]):
             logger.info(f'{self._lg_prefix} Выполняется компенсационная функция '
                         f'"{self._compensation_spec.name}".')
             self._compensation_spec.call()
-
-    def wc(self, spec: JobSpec[C, P_2]) -> 'WorkerJob[T, C, P]':
-        """
-        Сокращение для ``with_compensation``.
-        """
-        return self.with_compensation(spec)
-
-    def wpc(self, compensation: Callable[P, C]) -> 'WorkerJob[T, C, P]':
-        """
-        Сокращение для ``with_parametrized_compensation``.
-        """
-        return self.with_parametrized_compensation(compensation)

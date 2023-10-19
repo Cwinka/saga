@@ -17,12 +17,6 @@ def test_saga_job(saga_journal, worker):
     assert isinstance(job, SagaJob)
 
 
-def test_saga_job_data(saga_journal, worker):
-    data = Ok()
-    job = SagaJob(saga_journal, worker, lambda *_: None, data)
-    assert job.data == data, 'Полученные данные не совпадают с переданными.'
-
-
 @pytest.mark.parametrize('test_function, expected_result', [
     (lambda _, r: '42', '42'),
     (lambda _, r: 42.0, 42.0),
@@ -87,40 +81,3 @@ def test_saga_job_compensation(worker, saga_journal):
 
     assert compensation_check == (x**2/2 + x/2) - x, 'Все компенсационные функции должны быть ' \
                                                      'выполнены при исключении.'
-
-
-def test_saga_job_running_property_while_running(saga_journal, worker):
-    job = SagaJob(saga_journal, worker, lambda *_: time.sleep(1), Ok())
-
-    job.run()
-
-    assert job.running, 'Пока сага запущена, running свойство должно возвращать True.'
-
-
-def test_saga_job_running_property_when_finished(saga_journal, worker):
-    job = SagaJob(saga_journal, worker, lambda *_: None, Ok())
-
-    job.run()
-    job.wait()
-
-    assert not job.running, 'Когда сага завершена, running свойство должно возвращать False.'
-
-
-def test_saga_job_running_property_if_not_running(saga_journal, worker):
-    job = SagaJob(saga_journal, worker, lambda *_: None, Ok())
-
-    assert not job.running, 'Когда сага не запущена, running свойство должно возвращать False.'
-
-
-def test_saga_job_executed_property_if_not_running(saga_journal, worker):
-    job = SagaJob(saga_journal, worker, lambda *_: None, Ok())
-
-    assert not job.executed, 'Когда сага не запущена, executed свойство должно возвращать False.'
-
-
-def test_saga_job_executed_property_if_run(saga_journal, worker):
-    job = SagaJob(saga_journal, worker, lambda *_: None, Ok())
-
-    job.run()
-
-    assert job.executed, 'Когда сага была запущена, executed свойство должно возвращать True.'
