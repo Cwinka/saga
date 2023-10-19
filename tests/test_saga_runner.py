@@ -1,124 +1,101 @@
-import random
 import uuid
-from typing import Optional
+from typing import Callable
 
 import pytest
 
-from saga.models import JobStatus, Ok, SagaRecord, JobSpec
+from saga.models import JobStatus, Ok, SagaRecord
 from saga.saga import SagaJob
-from saga.runner import SagaRunner, idempotent_saga
 from saga.worker import SagaWorker, join_key
 
 
-@idempotent_saga('foo')
-def foo(_worker: SagaWorker, _: Ok) -> int:
-    return 1
+@pytest.fixture()
+def registered_saga(runner) -> Callable[[SagaWorker, Ok], int]:
+    def saga(_worker: SagaWorker, data: Ok) -> int:
+        return data.ok
+    runner.register_saga('saga', saga)
+    return saga
 
 
-def test_get_saga(runner):
-    assert runner.get_saga('foo') is foo
+@pytest.fixture()
+def runner_with_incomplete_saga(saga_journal, registered_saga, runner):
+    id_key = join_key(uuid.uuid4(), runner.get_saga_name(registered_saga))
+    saga_journal.create_saga(id_key)
+    saga_journal.update_saga(id_key, ['status'], [JobStatus.RUNNING])
+    return runner
 
 
-def test_register_saga(runner):
-    def boo(worker: SagaWorker, _: Ok) -> None:
-        return None
-
-    runner.register_saga('boo', boo)
-    assert runner.get_saga('boo') is boo
-
-
-def test_saga_runner_new(runner):
-    job = runner.new(uuid.uuid4(), foo, Ok())
-    assert isinstance(job, SagaJob)
+@pytest.fixture()
+def runner_with_failed_saga(saga_journal, registered_saga, runner):
+    id_key = join_key(uuid.uuid4(), runner.get_saga_name(registered_saga))
+    saga_journal.create_saga(id_key)
+    saga_journal.update_saga(id_key, ['status'], [JobStatus.FAILED])
+    return runner
 
 
-def test_saga_runner_wrong_saga(runner):
+def test_get_saga(runner, registered_saga):
+    name = runner.get_saga_name(registered_saga)
+    assert runner.get_saga(name) is registered_saga
+
+
+def test_after_register_saga_it_accessible_via_get_saga(runner):
+    def saga(wk, ok): ...
+
+    runner.register_saga('saga', saga)
+    assert runner.get_saga('saga') is saga
+
+
+def test_decorated_sagas_accessible_via_get_saga(runner):
+    @runner.saga('saga')
+    def saga(wk, ok): ...
+
+    assert runner.get_saga('saga') is saga
+
+
+def test_when_trying_to_create_saga_with_unregistered_saga_raises_exception(runner):
     with pytest.raises(AssertionError):
         runner.new(uuid.uuid4(), lambda x, y: 1, Ok())
 
 
-def test_saga_runner_rerun_0(runner):
-    runner.new(uuid.uuid4(), foo, Ok()).wait()
+def test_when_done_saga_exists_run_incomplete_does_not_run_it(runner, registered_saga):
+    runner.new(uuid.uuid4(), registered_saga, Ok()).wait()
 
     assert runner.run_incomplete() == 0, 'Завершенные саги не должны быть запущены.'
 
 
-def test_saga_runner_rerun_1(saga_journal):
-    id_key = join_key(uuid.uuid4(), 'foo')
-    saga_journal.create_saga(id_key)
-    saga_journal.update_saga(id_key, ['status'], [JobStatus.RUNNING])
-
-    runner = SagaRunner(saga_journal)
-
-    assert runner.run_incomplete() == 1, 'Незавершенные саги должны быть запущены.'
+def test_when_running_saga_exists_run_incomplete_do_run_it(runner_with_incomplete_saga):
+    assert runner_with_incomplete_saga.run_incomplete() == 1, \
+        'Незавершенные саги должны быть запущены.'
 
 
-def test_saga_runner_rerun_exc(runner):
-
-    class Err(Exception):
-        pass
-
-    @idempotent_saga('boo')
-    def boo(worker: SagaWorker, _: Ok) -> None:
-        raise Err
-
-    try:
-        runner.new(uuid.uuid4(), boo, Ok()).wait()
-    except Err:
-        pass
-
-    assert runner.run_incomplete() == 0, 'Саги, завершенные с ошибкой не должны быть перезапущены.'
+def test_when_failed_saga_exists_run_incomplete_does_no_run_it(runner_with_incomplete_saga):
+    assert runner_with_incomplete_saga.run_incomplete() == 1, \
+        'Незавершенные саги должны быть запущены.'
 
 
-def test_get_saga_name_via_decorator(runner):
-    name = 'foo'
-    saga = idempotent_saga(name)(lambda *a: None)
-    assert runner.get_saga_name(saga) == name
+def test_saga_runner_rerun_exc(runner_with_failed_saga):
+    assert runner_with_failed_saga.run_incomplete() == 0, \
+        'Саги, завершенные с ошибкой не должны быть перезапущены.'
 
 
-def test_get_saga_name_via_method(runner):
-    name = 'foo'
-    saga = lambda *a: None
-    runner.register_saga(name=name, saga=saga)
-    assert runner.get_saga_name(saga) == name
+def test_saga_record_accessible_via_its_uuid_and_link_to_saga(runner, registered_saga):
+    uid = uuid.uuid4()
+    runner.new(uid, registered_saga, Ok()).wait()
 
-
-def test_get_saga_record(runner):
-    saga = idempotent_saga('foo')(lambda *a: None)
-    key = uuid.uuid4()
-    runner.new(key, saga, Ok()).wait()
-
-    record = runner.get_saga_record_by_uid(key, saga)
+    record = runner.get_saga_record_by_uid(uid, registered_saga)
     assert isinstance(record, SagaRecord)
 
 
-def test_get_saga_record_by_wkey(runner):
-    key = uuid.uuid4()
-
-    @idempotent_saga('foo')
-    def saga(worker: SagaWorker, _) -> Optional[SagaRecord]:
-        return runner.get_saga_record_by_wkey(worker.idempotent_key)
-
-    result = runner.new(key, saga, Ok()).wait()
-
-    assert isinstance(result, SagaRecord)
-
-
-def test_new_saga_from_record_fail(runner, saga_journal):
-    @idempotent_saga('saga')
-    def saga(worker: SagaWorker, _):
-        return None
+def test_new_from_returns_none_with_never_executed_sagas(runner):
+    @runner.saga('saga')
+    def saga(wk, ok): ...
 
     assert runner.new_from(uuid.uuid4(), saga) is None
 
 
-def test_new_saga_from_record(runner, saga_journal):
-    @idempotent_saga('saga')
-    def saga(worker: SagaWorker, _: Ok) -> int:
-        return worker.job(JobSpec(random.randint, 0, 1000)).run()
+def test_new_from_returns_saga_job_with_executed_sagas(runner, registered_saga):
+    uid = uuid.uuid4()
+    runner.new(uid, registered_saga, Ok()).wait()
 
-    key = uuid.uuid4()
-    r = runner.new(key, saga, Ok()).wait()
-    r2 = runner.new_from(key, saga).wait()
-    assert r == r2, (f'Запуск саги методом {SagaRunner.new_from.__name__} должен вернуть тот же '
-                     f'результат.')
+    job = runner.new_from(uid, registered_saga)
+    assert isinstance(job, SagaJob), \
+        'Когда либо запущенные саги должны воссоздаваться через метод new_from'
