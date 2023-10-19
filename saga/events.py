@@ -30,13 +30,13 @@ class EventRaisedException(Exception):
 
 class EventSender(ABC):
     """
-    `EventSender` отвечает за отправку событий в `EventListener`.
+    ``EventSender`` отвечает за отправку событий в ``EventListener``.
     """
 
     @abstractmethod
     def send(self, uuid: UUID, event: Event[Any, Any], cancel_previous_uuid: bool) -> None:
         """
-        Отправить событие event.
+        Отправить событие ``event``.
         """
 
     @abstractmethod
@@ -44,15 +44,15 @@ class EventSender(ABC):
         """
         Подождать результат события.
         Метод может быть использован только в том случае, если событие было отправлено.
-        Метод может поднять `TimeoutError` в случае превышения времени ожидания `timeout`.
+        Метод может поднять ``TimeoutError`` в случае превышения времени ожидания ``timeout``.
         """
 
 
 class EventListener(ABC):
     """
-    `EventListener` отвечает за получение событий от `EventSender`.
-    Когда событие принято, `EventListener` перенаправляет его в соответствующую функцию обработчик.
-    Функции обработчики могут быть получены методом `events_map`.
+    ``EventListener`` отвечает за получение событий от ``EventSender``.
+    Когда событие принято, ``EventListener`` перенаправляет его в соответствующую функцию
+    обработчик. Функции обработчики могут быть получены методом ``events_map``.
     """
 
     @abstractmethod
@@ -65,8 +65,8 @@ class EventListener(ABC):
     @staticmethod
     def events_map(*events: 'SagaEvents') -> EventMap:
         """
-        Возвращает спецификацию событий `EventMap`.
-        Значения `EventMap`: (
+        Возвращает спецификацию событий ``EventMap``.
+        Значения ``EventMap``: (
             Имя события.
             Модель данных, которую принимает событие.
             Модель данных, которую возвращает событие.
@@ -83,7 +83,7 @@ class EventListener(ABC):
 
 class CommunicationFactory(ABC):
     """
-    Фабричный класс для создания объектов `EventListener` и `EventSender`.
+    Фабричный класс для создания объектов ``EventListener`` и ``EventSender``.
     """
 
     @abstractmethod
@@ -104,14 +104,14 @@ def auto_send(sender: EventSender, uuid: UUID,
               f: Callable[P, Event[Any, Out]], timeout: float,
               cancel_previous_uuid: bool = False) -> Callable[P, Out]:
     """
-    Оборачивает функцию `f`, автоматически отправляя событие с помощью `sender` объекта и
+    Оборачивает функцию ``f``, автоматически отправляя событие с помощью ``sender`` объекта и
     возвращая результат.
 
     :param sender: Отправитель событий.
     :param uuid: Уникальный идентификатор операции.
     :param f: Функция, возвращающее событие.
     :param timeout: Максимальное время ожидания ответа.
-    :param cancel_previous_uuid: Отменить предыдущую операцию с таким же `uuid`.
+    :param cancel_previous_uuid: Отменить предыдущую операцию с таким же ``uuid``.
     """
     @functools.wraps(f)
     def wrap(*args: P.args, **kwargs: P.kwargs) -> Out:
@@ -125,7 +125,7 @@ def auto_send(sender: EventSender, uuid: UUID,
 
 class SagaEvents:
     """
-    SagaEvents - это хранилище событий, подобное ApiRouter.
+    ``SagaEvents`` - это хранилище событий, подобное ``ApiRouter``.
     """
 
     def __init__(self) -> None:
@@ -144,7 +144,7 @@ class SagaEvents:
                                                           Callable[[UUID, In], Out]]:
         """
         Зарегистрировать спецификацию spec.
-        Зарегистрированные спецификации могут быть получены методом `handlers`.
+        Зарегистрированные спецификации могут быть получены методом ``handlers``.
         """
         def wrap(f: Callable[[UUID, In], Out]) -> Callable[[UUID, In], Out]:
             @functools.wraps(f)

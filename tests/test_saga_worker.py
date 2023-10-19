@@ -96,7 +96,7 @@ def test_worker_no_compensate_if_no_run(worker):
             .with_compensation(JobSpec(foo, i))
     worker.compensate()
 
-    assert compensate_check == 0, ('Метод `with_compensation` не должен добавлять компенсацию, '
+    assert compensate_check == 0, ('Метод ``with_compensation`` не должен добавлять компенсацию, '
                                    'если функция не была запущена.')
 
 
