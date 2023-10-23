@@ -37,7 +37,7 @@ def main() -> None:
     path.mkdir(exist_ok=True)
 
     runner = SagaRunner()
-    runner.register_saga('any_name', create_spec_in_directory)
+    runner.register_saga('any_name', create_spec_in_directory, SpecData)
     try:
         runner.new(uuid.uuid4(), create_spec_in_directory, SpecData(path=path)).wait()
     except AttributeError:

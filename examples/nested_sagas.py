@@ -32,8 +32,8 @@ def second_saga(worker: SagaWorker, data: DataForSecond) -> None:
 
 def main() -> None:
     runner = SagaRunner()
-    runner.register_saga('first', first_saga)
-    runner.register_saga('second', second_saga)
+    runner.register_saga('first', first_saga, DataForFirst)
+    runner.register_saga('second', second_saga, DataForSecond)
     uid = uuid.uuid4()
     runner.new(uid, first_saga, DataForFirst(count=10)).wait()
 
