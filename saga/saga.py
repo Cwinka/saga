@@ -103,10 +103,11 @@ class SagaJob(Generic[T, M]):
         return self._result.get(timeout)
 
     def _create_initial_saga_record(self) -> None:
-        self._journal.create_saga(self._worker.idempotent_key)
-        self._journal.update_saga(self._worker.idempotent_key,
-                                  ['initial_data'],
-                                  [self._model_to_b(self._data)])
+        if self._journal.get_saga(self._worker.idempotent_key) is None:
+            self._journal.create_saga(self._worker.idempotent_key)
+            self._journal.update_saga(self._worker.idempotent_key,
+                                      ['initial_data'],
+                                      [self._model_to_b(self._data)])
 
     def _compensate_on_exception(self, f: Callable[P, T]) -> Callable[P, T]:
         """
