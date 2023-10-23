@@ -12,7 +12,7 @@ from saga.worker import SagaWorker, join_key
 def registered_saga(runner) -> Callable[[SagaWorker, Ok], int]:
     def saga(_worker: SagaWorker, data: Ok) -> int:
         return data.ok
-    runner.register_saga('saga', saga)
+    runner.register_saga('saga', saga, Ok)
     return saga
 
 
@@ -34,21 +34,21 @@ def runner_with_failed_saga(saga_journal, registered_saga, runner):
 
 def test_get_saga(runner, registered_saga):
     name = runner.get_saga_name(registered_saga)
-    assert runner.get_saga(name) is registered_saga
+    assert runner.get_saga(name)[0] is registered_saga
 
 
 def test_after_register_saga_it_accessible_via_get_saga(runner):
     def saga(wk, ok): ...
 
-    runner.register_saga('saga', saga)
-    assert runner.get_saga('saga') is saga
+    runner.register_saga('saga', saga, Ok)
+    assert runner.get_saga('saga')[0] is saga
 
 
 def test_decorated_sagas_accessible_via_get_saga(runner):
-    @runner.saga('saga')
+    @runner.saga('saga', Ok)
     def saga(wk, ok): ...
 
-    assert runner.get_saga('saga') is saga
+    assert runner.get_saga('saga')[0] is saga
 
 
 def test_after_register_method_as_saga_it_is_accessible_via_get_saga(runner):
@@ -58,8 +58,8 @@ def test_after_register_method_as_saga_it_is_accessible_via_get_saga(runner):
 
     foo = Foo()
     link_to_a_method = foo.a  # без ссылки foo.a is not foo.a
-    runner.register_saga('saga', link_to_a_method)
-    assert runner.get_saga('saga') is link_to_a_method
+    runner.register_saga('saga', link_to_a_method, Ok)
+    assert runner.get_saga('saga')[0] is link_to_a_method
 
 
 def test_when_trying_to_create_saga_with_unregistered_saga_raises_exception(runner):
@@ -78,12 +78,7 @@ def test_when_running_saga_exists_run_incomplete_do_run_it(runner_with_incomplet
         'Незавершенные саги должны быть запущены.'
 
 
-def test_when_failed_saga_exists_run_incomplete_does_no_run_it(runner_with_incomplete_saga):
-    assert runner_with_incomplete_saga.run_incomplete() == 1, \
-        'Незавершенные саги должны быть запущены.'
-
-
-def test_saga_runner_rerun_exc(runner_with_failed_saga):
+def test_when_failed_saga_exists_run_incomplete_does_no_run_it(runner_with_failed_saga):
     assert runner_with_failed_saga.run_incomplete() == 0, \
         'Саги, завершенные с ошибкой не должны быть перезапущены.'
 
@@ -97,7 +92,7 @@ def test_saga_record_accessible_via_its_uuid_and_link_to_saga(runner, registered
 
 
 def test_new_from_returns_none_with_never_executed_sagas(runner):
-    @runner.saga('saga')
+    @runner.saga('saga', Ok)
     def saga(wk, ok): ...
 
     assert runner.new_from(uuid.uuid4(), saga) is None

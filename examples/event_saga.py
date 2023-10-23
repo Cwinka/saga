@@ -58,5 +58,5 @@ if __name__ == '__main__':
     cfk.listener(events).run_in_thread()
 
     runner = SagaRunner(cfk=cfk)
-    runner.register_saga('saga', saga_2)
+    runner.register_saga('saga', saga_2, Ok)
     runner.new(uuid.uuid4(), saga_2, Ok()).wait()

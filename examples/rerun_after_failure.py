@@ -25,7 +25,7 @@ def main() -> None:
 
     journal = MemorySagaJournal()
     runner = SagaRunner(saga_journal=journal)
-    runner.register_saga('saga', saga)
+    runner.register_saga('saga', saga, Ok)
 
     make_incomplete_record(runner, journal)
 
