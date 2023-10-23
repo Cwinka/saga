@@ -2,6 +2,8 @@ import inspect
 from typing import Any, Callable, Dict, Optional, Type, TypeVar
 from uuid import UUID
 
+from pydantic import BaseModel
+
 from saga.compensator import SagaCompensator
 from saga.events import CommunicationFactory
 from saga.journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
@@ -48,7 +50,6 @@ class SagaRunner:
 
         runner.run_incomplete()  # возвращает количество запущенных саг.
     """
-    _sagas: Dict[str, Callable[[SagaWorker, M], Any]] = {}
     _r_prefix = '[Runner]'
 
     def __init__(self,
@@ -56,7 +57,7 @@ class SagaRunner:
                  worker_journal: Optional[WorkerJournal] = None,
                  cfk: Optional[CommunicationFactory] = None,
                  forget_done: bool = False,
-                 model_to_b: Callable[[M], bytes] = model_to_initial_data,
+                 model_to_b: Callable[[BaseModel], bytes] = model_to_initial_data,
                  model_from_b: Callable[[Type[M], bytes], M] = model_from_initial_data,
                  job_max_retries: int = 1, job_retry_interval: float = 2.0,
                  event_job_timeout: float = 5.0,
@@ -93,6 +94,9 @@ class SagaRunner:
         self._compensation_max_retries = compensation_max_retries
         self._compensation_interval = compensation_interval
         self._compensation_event_timeout = compensation_event_timeout
+
+        self._registered_sagas: Dict[str, Saga[BaseModel, Any]] = {}
+        self._registered_sagas_reversed: Dict[Saga[BaseModel, Any], str] = {}
 
     def new(self, uuid: UUID, saga: Saga[M, T], data: M) -> SagaJob[T, M]:
         """
@@ -158,14 +162,13 @@ class SagaRunner:
         assert model is not None, f'Модель данных саги "{saga_f.__name__}" не может быть None.'
         return model
 
-    @classmethod
-    def register_saga(cls, name: str, saga: Saga[M, Any]) -> None:
+    def register_saga(self, name: str, saga: Saga[M, Any]) -> None:
         """
         Зарегистрировать функцию saga с именем name.
         """
-        logger.debug(f'{cls._r_prefix} Регистрация саги "{name}".')
-        setattr(saga, SAGA_NAME_ATTR, name)
-        cls._sagas[name] = saga
+        logger.debug(f'{self._r_prefix} Регистрация саги "{name}".')
+        self._registered_sagas[name] = saga  # type: ignore[assignment]
+        self._registered_sagas_reversed[saga] = name  # type: ignore[index]
 
     def saga(self, name: str) -> Callable[[Saga[M, T]], Saga[M, T]]:
         """
@@ -176,22 +179,23 @@ class SagaRunner:
             return f
         return decorator
 
-    def get_saga(self, name: str) -> Saga[M, Any]:
+    def get_saga(self, name: str) -> Saga[BaseModel, Any]:
         """
         Получить зарегистрированную функцию саги с именем name.
         """
-        saga = self._sagas.get(name)
+        saga = self._registered_sagas.get(name)
         assert saga is not None, (f'Сага "{name}" не найдена. Возможно: сагу переименовали, '
                                   f'но в базе данных осталось старое имя саги; сага '
                                   f'"{name}" не была запущена; сага "{name}" не зарегистрирована.')
         return saga
 
-    def get_saga_name(self, saga: Saga[M, T]) -> str:
+    def get_saga_name(self, saga: Saga[M, Any]) -> str:
         """
         Получить имя зарегистрированной саги saga.
         """
-        assert hasattr(saga, SAGA_NAME_ATTR), self._not_a_saga_msg(saga)
-        return getattr(saga, SAGA_NAME_ATTR)  # type: ignore[no-any-return]
+        name = self._registered_sagas_reversed.get(saga)  # type: ignore[arg-type]
+        assert name is not None, self._not_a_saga_msg(saga)
+        return name
 
     def get_saga_record_by_uid(self, idempotent_key: UUID, saga: Saga[M, Any]) \
             -> Optional[SagaRecord]:
@@ -206,4 +210,3 @@ class SagaRunner:
         return (f'Функция "{f.__name__}" не является сагой. '
                 f'Используйте декоратор "{self.saga.__name__}" '
                 f'чтобы отметить функцию как сагу.')
-

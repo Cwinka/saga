@@ -51,6 +51,17 @@ def test_decorated_sagas_accessible_via_get_saga(runner):
     assert runner.get_saga('saga') is saga
 
 
+def test_after_register_method_as_saga_it_is_accessible_via_get_saga(runner):
+    class Foo:
+        def a(self, wk, data):
+            pass
+
+    foo = Foo()
+    link_to_a_method = foo.a  # без ссылки foo.a is not foo.a
+    runner.register_saga('saga', link_to_a_method)
+    assert runner.get_saga('saga') is link_to_a_method
+
+
 def test_when_trying_to_create_saga_with_unregistered_saga_raises_exception(runner):
     with pytest.raises(AssertionError):
         runner.new(uuid.uuid4(), lambda x, y: 1, Ok())
