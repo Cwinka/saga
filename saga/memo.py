@@ -2,10 +2,11 @@ import base64
 import functools
 import pickle
 import time
+import traceback
 from typing import Any, Callable, List, ParamSpec, TypeVar
 
 from saga.journal import WorkerJournal
-from saga.models import JobRecord, JobStatus
+from saga.models import JobRecord, JobStatus, JobSpec
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -72,29 +73,36 @@ class Memoized:
             if record.status == JobStatus.DONE:
                 return self._obj_from_b(record.result)  # type: ignore[no-any-return]
             if record.runs >= retries:
-                exc = self._obj_from_b(record.result)
-                if isinstance(exc, Exception):
-                    raise exc
-                raise NotEnoughRetries()
+                trace = self._obj_from_b(record.result)
+                raise NotEnoughRetries(trace)
+            spec = JobSpec(f, *args, **kwargs)
+            return self._run_in_exception_block(spec, retries, retry_interval, record)
+        return wrap
+
+    def _run_in_exception_block(self, spec: JobSpec[T, Any], retries: int, retry_interval: float,
+                                record: JobRecord) -> T:
+        exc: Exception = NotEnoughRetries()
+        trace = ''
+        while record.runs < retries:
+            record.runs += 1
             self._journal.update_record(record.idempotent_operation_id,
-                                        ['runs'],
-                                        [record.runs + 1])
+                                        ['runs'], [record.runs])
             try:
-                r = f(*args, **kwargs)
+                r = spec.call()
                 self._journal.update_record(record.idempotent_operation_id,
                                             ['status', 'result'],
                                             [JobStatus.DONE, self._obj_to_b(r)])
                 self._done.append(record.idempotent_operation_id)
                 return r
             except Exception as e:
-                self._journal.update_record(record.idempotent_operation_id,
-                                            ['status', 'result'],
-                                            [JobStatus.FAILED, self._obj_to_b(e)])
+                exc = e
+                trace = traceback.format_exc()
                 if record.runs < retries:
                     time.sleep(retry_interval)
-                    return wrap(*args, **kwargs)
-                raise e
-        return wrap
+        self._journal.update_record(record.idempotent_operation_id,
+                                    ['status', 'result'],
+                                    [JobStatus.FAILED, self._obj_to_b(trace)])
+        raise exc
 
     def _next_op_id(self) -> str:
         self._operation_id += 1
