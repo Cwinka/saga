@@ -1,3 +1,4 @@
+import threading
 import uuid
 from typing import Callable
 
@@ -13,6 +14,14 @@ def registered_saga(runner) -> Callable[[SagaWorker, Ok], int]:
     def saga(_worker: SagaWorker, data: Ok) -> int:
         return data.ok
     runner.register_saga('saga', saga, Ok)
+    return saga
+
+
+@pytest.fixture()
+def registered_eager_saga(eager_runner) -> Callable[[SagaWorker, Ok], int]:
+    def saga(_worker: SagaWorker, data: Ok) -> int:
+        return threading.get_ident()
+    eager_runner.register_saga('saga', saga, Ok)
     return saga
 
 
@@ -105,3 +114,8 @@ def test_new_from_returns_saga_job_with_executed_sagas(runner, registered_saga):
     job = runner.new_from(uid, registered_saga)
     assert isinstance(job, SagaJob), \
         'Когда либо запущенные саги должны воссоздаваться через метод new_from'
+
+
+def test_runner_with_eager_mode_executes_in_the_same_thread(eager_runner, registered_eager_saga):
+    ident = eager_runner.new(uuid.uuid4(), registered_eager_saga, Ok()).wait()
+    assert threading.get_ident() == ident

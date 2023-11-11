@@ -1,4 +1,3 @@
-import inspect
 from typing import Any, Callable, Dict, Optional, Type, TypeVar, Tuple
 from uuid import UUID
 
@@ -9,7 +8,7 @@ from saga.events import CommunicationFactory
 from saga.journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJournal
 from saga.logger import logger
 from saga.models import M, SagaRecord
-from saga.saga import Saga, SagaJob, model_from_initial_data, model_to_initial_data
+from saga.saga import Saga, SagaJob, EagerSagaJob, model_from_initial_data, model_to_initial_data
 from saga.worker import SagaWorker, join_key, split_key
 
 T = TypeVar('T')
@@ -55,18 +54,19 @@ class SagaRunner:
     def __init__(self,
                  saga_journal: Optional[SagaJournal] = None,
                  worker_journal: Optional[WorkerJournal] = None,
-                 cfk: Optional[CommunicationFactory] = None,
+                 communication_factory: Optional[CommunicationFactory] = None,
                  forget_done: bool = False,
                  model_to_b: Callable[[BaseModel], bytes] = model_to_initial_data,
                  model_from_b: Callable[[Type[M], bytes], M] = model_from_initial_data,
                  job_max_retries: int = 1, job_retry_interval: float = 2.0,
                  event_job_timeout: float = 5.0,
                  compensation_max_retries: int = 10, compensation_interval: float = 1,
-                 compensation_event_timeout: float = 5):
+                 compensation_event_timeout: float = 5,
+                 eager_mode: bool = False):
         """
         :param saga_journal: Журнал записей саг.
         :param worker_journal: Журнал записей шагов саги.
-        :param cfk: Фабрика для использования событий внутри саги.
+        :param communication_factory: Фабрика для использования событий внутри саги.
         :param forget_done: Если True, после выполнения, все записи выполненной саги удаляться.
         :param model_to_b: Функция конвертации модели данных в байты.
         :param model_from_b: Функция конвертации байт в модель данных.
@@ -76,14 +76,16 @@ class SagaRunner:
                                    случае исключения.
         :param event_job_timeout: Максимальное время ожидания ответа события.
         :param compensation_max_retries: Количество возможных повторов функции компенсации в случае
-                                 исключения в ней. Если количество повторов 0,
-                                 тогда будет поднято оригинальное исключение.
+                                         исключения в ней. Если количество повторов 0,
+                                         тогда будет поднято оригинальное исключение.
         :param compensation_interval: Интервал времени в секундах, через который будет вызван повтор
                                       функции компенсации в случае исключения.
         :param compensation_event_timeout: Время ожидания события компенсации.
+        :param eager_mode: Если True, тогда все SagaJob выполняются сразу же и в блокирующем
+                           режиме, не дожидаясь вызова wait.
         """
         self._forget_done = forget_done
-        self._cfk = cfk
+        self._cfy = communication_factory
         self._worker_journal = worker_journal or MemoryJournal()
         self._saga_journal = saga_journal or MemorySagaJournal()
         self._model_to_b = model_to_b
@@ -94,7 +96,7 @@ class SagaRunner:
         self._compensation_max_retries = compensation_max_retries
         self._compensation_interval = compensation_interval
         self._compensation_event_timeout = compensation_event_timeout
-
+        self._job_csl: Type[SagaJob[Any, Any]] = EagerSagaJob if eager_mode else SagaJob
         self._registered_sagas: Dict[str, Tuple[Saga[BaseModel, Any], Type[BaseModel]]] = {}
         self._registered_sagas_reversed: Dict[Saga[BaseModel, Any], str] = {}
 
@@ -111,16 +113,17 @@ class SagaRunner:
                             saga_name=saga_name,
                             journal=self._worker_journal,
                             compensator=SagaCompensator(),
-                            sender=self._cfk.sender() if self._cfk is not None else None,
+                            sender=self._cfy.sender() if self._cfy is not None else None,
                             job_max_retries=self._job_max_retries,
                             job_retry_interval=self._job_retry_interval,
                             event_job_timeout=self._event_job_timeout,
                             compensation_max_retries=self._compensation_max_retries,
                             compensation_interval=self._compensation_interval,
                             compensation_event_timeout=self._compensation_event_timeout)
-        logger.info(f'{self._r_prefix} Создание контекста саги: SJ: {uuid} S: {saga_name}.')
-        return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
-                       model_to_b=self._model_to_b)
+        logger.info(f'{self._r_prefix} Создание контекста саги: Saga job: {uuid} Saga: '
+                    f'{saga_name}.')
+        return self._job_csl(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
+                             model_to_b=self._model_to_b)
 
     def new_from(self, uuid: UUID, saga: Saga[M, T],
                  _record: Optional[SagaRecord] = None) -> Optional[SagaJob[T, M]]:
@@ -136,7 +139,7 @@ class SagaRunner:
         if record is None:
             return None
         model: Type[M] = self.get_saga(saga_name)[1]
-        logger.info(f'{self._r_prefix} Воссоздание саги: SJ: {uuid} S: {saga_name}.')
+        logger.info(f'{self._r_prefix} Воссоздание саги: Saga job: {uuid} Saga: {saga_name}.')
         return self.new(uuid, saga, self._model_from_b(model, record.initial_data))
 
     def run_incomplete(self) -> int:

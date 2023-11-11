@@ -144,3 +144,17 @@ class SagaJob(Generic[T, M]):
                         self._journal.delete_sagas(record.idempotent_key)
                         self._worker.forget_done()
         return wrap
+
+
+class EagerSagaJob(SagaJob[T, M], Generic[T, M]):
+    def run(self) -> None:
+        if self._result is None:
+            self._create_initial_saga_record()
+            self._result = self._f_with_compensation(self._worker,  # type: ignore[assignment]
+                                                     self._data)
+
+    def wait(self, timeout: Optional[float] = None) -> T:
+        if self._result is None:
+            self.run()
+        logger.info(f'{self._s_prefix} Ожидание завершения саги.')
+        return self._result  # type: ignore[return-value]
