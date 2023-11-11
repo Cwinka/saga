@@ -118,7 +118,8 @@ class SagaRunner:
                             compensation_max_retries=self._compensation_max_retries,
                             compensation_interval=self._compensation_interval,
                             compensation_event_timeout=self._compensation_event_timeout)
-        logger.info(f'{self._r_prefix} Создание контекста саги: SJ: {uuid} S: {saga_name}.')
+        logger.info(f'{self._r_prefix} Создание контекста саги: Saga job: {uuid} Saga: '
+                    f'{saga_name}.')
         return SagaJob(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
                        model_to_b=self._model_to_b)
 
@@ -136,7 +137,7 @@ class SagaRunner:
         if record is None:
             return None
         model: Type[M] = self.get_saga(saga_name)[1]
-        logger.info(f'{self._r_prefix} Воссоздание саги: SJ: {uuid} S: {saga_name}.')
+        logger.info(f'{self._r_prefix} Воссоздание саги: Saga job: {uuid} Saga: {saga_name}.')
         return self.new(uuid, saga, self._model_from_b(model, record.initial_data))
 
     def run_incomplete(self) -> int:
