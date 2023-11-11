@@ -38,9 +38,17 @@ def worker(communication_fk, wk_journal, compensator) -> SagaWorker:
                       compensator=compensator, sender=communication_fk.sender())
 
 
+@pytest.fixture(params=[
+    {'eager': False},
+    {'eager': True},
+])
+def runner(request, saga_journal, wk_journal) -> SagaRunner:
+    return SagaRunner(saga_journal, wk_journal, eager_mode=request.param['eager'])
+
+
 @pytest.fixture()
-def runner(saga_journal, wk_journal) -> SagaRunner:
-    return SagaRunner(saga_journal, wk_journal)
+def eager_runner(saga_journal, wk_journal) -> SagaRunner:
+    return SagaRunner(saga_journal, wk_journal, eager_mode=True)
 
 
 @pytest.fixture()
