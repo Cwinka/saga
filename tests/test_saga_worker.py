@@ -25,7 +25,7 @@ def test_worker_run(worker):
 
 def test_worker_run_done_status(worker, wk_journal):
     worker.job(JobSpec(lambda: 1)).run()
-    assert wk_journal.get_record(f'{worker.idempotent_key}_1').status == JobStatus.DONE
+    assert wk_journal.get_record(worker.uuid, 1).status == JobStatus.DONE
 
 
 def test_worker_run_exception(worker):
@@ -43,7 +43,7 @@ def test_worker_run_fail_status(worker, wk_journal):
         worker.job(JobSpec(foo)).run()
     except SomeError:
         pass
-    assert wk_journal.get_record(f'{worker.idempotent_key}_1').status == JobStatus.FAILED
+    assert wk_journal.get_record(worker.uuid, 1).status == JobStatus.FAILED
 
 
 def test_worker_run_compensate(worker):
@@ -127,7 +127,7 @@ def test_worker_event_send(worker, communication_fk):
     lis = communication_fk.listener(events)
     lis.run_in_thread()
     time.sleep(0.05)  # wait to wake up
-    result = worker.event_job(JobSpec(always_ok_event.make, Ok(ok=12)), timeout=1).run()
+    result = worker.event_job(JobSpec(always_ok_event.make, Ok(ok=12)), timeout=0.2).run()
     lis.shutdown()
 
     assert result.ok == 12, 'Событий должно быть доставлено принимающей стороне.'
@@ -208,5 +208,5 @@ def test_worker_event_raise_error_propagation(worker, communication_fk):
     time.sleep(0.05)  # wait to wake up
 
     with pytest.raises(EventRaisedException):
-        worker.event_job(JobSpec(always_raise_event.make, Ok(ok=12)), timeout=1).run()
+        worker.event_job(JobSpec(always_raise_event.make, Ok(ok=12)), timeout=0.1).run()
     lis.shutdown()

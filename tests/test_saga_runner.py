@@ -6,7 +6,7 @@ import pytest
 
 from saga.models import JobStatus, Ok, SagaRecord
 from saga.saga import SagaJob
-from saga.worker import SagaWorker, join_key
+from saga.worker import SagaWorker
 
 
 @pytest.fixture()
@@ -27,17 +27,17 @@ def registered_eager_saga(eager_runner) -> Callable[[SagaWorker, Ok], int]:
 
 @pytest.fixture()
 def runner_with_incomplete_saga(saga_journal, registered_saga, runner):
-    id_key = join_key(uuid.uuid4(), runner.get_saga_name(registered_saga))
-    saga_journal.create_saga(id_key)
-    saga_journal.update_saga(id_key, ['status'], [JobStatus.RUNNING])
+    key = uuid.uuid4()
+    saga_journal.create_saga(key, runner.get_saga_name(registered_saga))
+    saga_journal.update_saga(key, ['status'], [JobStatus.RUNNING])
     return runner
 
 
 @pytest.fixture()
 def runner_with_failed_saga(saga_journal, registered_saga, runner):
-    id_key = join_key(uuid.uuid4(), runner.get_saga_name(registered_saga))
-    saga_journal.create_saga(id_key)
-    saga_journal.update_saga(id_key, ['status'], [JobStatus.FAILED])
+    key = uuid.uuid4()
+    saga_journal.create_saga(key, runner.get_saga_name(registered_saga))
+    saga_journal.update_saga(key, ['status'], [JobStatus.FAILED])
     return runner
 
 
@@ -96,7 +96,7 @@ def test_saga_record_accessible_via_its_uuid_and_link_to_saga(runner, registered
     uid = uuid.uuid4()
     runner.new(uid, registered_saga, Ok()).wait()
 
-    record = runner.get_saga_record_by_uid(uid, registered_saga)
+    record = runner.get_saga_record_by_uid(uid)
     assert isinstance(record, SagaRecord)
 
 
