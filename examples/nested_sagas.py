@@ -37,8 +37,8 @@ def main() -> None:
     uid = uuid.uuid4()
     runner.new(uid, first_saga, DataForFirst(count=10)).wait()
 
-    assert runner.get_saga_record_by_uid(uid, first_saga) is not None
-    assert runner.get_saga_record_by_uid(uid, second_saga) is None
+    assert runner.get_saga_record_by_uid(uid) is not None
+    assert runner.get_saga_record_by_uid(uid) is None
 
 
 if __name__ == '__main__':

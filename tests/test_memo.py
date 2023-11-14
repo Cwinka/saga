@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from saga.memo import NotEnoughRetries, object_to_bytes, object_from_bytes
+from saga.memo import NotEnoughRetries
 
 
 class Err(Exception):
@@ -61,7 +61,7 @@ def test_memo_no_retries_left_raises_not_enough_retries(memoized, wk_journal):
 
 
 def test_memo_return_original_exception_on_error(memoized, function_with_err):
-    f = memoized.memoize(function_with_err, retries=2)
+    f = memoized.memoize(function_with_err, retries=2, retry_interval=0.1)
     with pytest.raises(Err):
         f()
 

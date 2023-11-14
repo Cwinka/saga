@@ -57,6 +57,6 @@ if __name__ == '__main__':
     cfk = RedisCommunicationFactory(rd)
     cfk.listener(events).run_in_thread()
 
-    runner = SagaRunner(cfk=cfk)
+    runner = SagaRunner(communication_factory=cfk)
     runner.register_saga('saga', saga_2, Ok)
     runner.new(uuid.uuid4(), saga_2, Ok()).wait()

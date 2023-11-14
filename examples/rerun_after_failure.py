@@ -3,7 +3,6 @@ import uuid
 
 from saga import JobStatus, MemorySagaJournal, Ok, SagaRunner, SagaWorker, SagaJournal
 from saga.saga import model_to_initial_data
-from saga.worker import join_key
 
 
 def saga(worker: SagaWorker, _: Ok) -> None:
@@ -13,11 +12,10 @@ def saga(worker: SagaWorker, _: Ok) -> None:
 def make_incomplete_record(runner: SagaRunner, saga_journal: SagaJournal):
     # Симуляция незавершенной саги, которая могла возникнуть после неожиданного
     # завершения программы
-    idempotent_key = join_key(uuid.uuid4(), runner.get_saga_name(saga))
-    saga_record = saga_journal.create_saga(idempotent_key)
+    saga_record = saga_journal.create_saga(uuid.uuid4(), runner.get_saga_name(saga))
     saga_record.initial_data = model_to_initial_data(Ok())
     saga_record.status = JobStatus.RUNNING
-    saga_journal.update_saga(idempotent_key, ['initial_data', 'status'],
+    saga_journal.update_saga(saga_record.uuid, ['initial_data', 'status'],
                              [model_to_initial_data(Ok()), JobStatus.RUNNING])
 
 

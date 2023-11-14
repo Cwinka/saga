@@ -3,7 +3,8 @@ import functools
 import pickle
 import time
 import traceback
-from typing import Any, Callable, List, ParamSpec, TypeVar
+from typing import Any, Callable, ParamSpec, TypeVar
+from uuid import UUID
 
 from saga.journal import WorkerJournal
 from saga.models import JobRecord, JobStatus, JobSpec
@@ -34,21 +35,20 @@ class Memoized:
     """
     Memoized используется для сохранения результата работы функции.
     """
-    def __init__(self, memo_prefix: str, journal: WorkerJournal,
-                 obj_to_b: Callable[[Any], bytes] = object_to_bytes,
-                 obj_from_b: Callable[[bytes], Any] = object_from_bytes):
+    def __init__(self, uuid: UUID, journal: WorkerJournal,
+                 obj_to_bytes: Callable[[Any], bytes] = object_to_bytes,
+                 obj_from_bytes: Callable[[bytes], Any] = object_from_bytes):
         self._journal = journal
-        self._memo_prefix = memo_prefix
+        self._uuid = uuid
         self._operation_id = 0
-        self._done: List[str] = []
-        self._obj_to_b = obj_to_b
-        self._obj_from_b = obj_from_b
+        self._obj_to_b = obj_to_bytes
+        self._obj_from_b = obj_from_bytes
 
     def forget_done(self) -> None:
         """
         Удалить все сохраненные результаты работы.
         """
-        self._journal.delete_records(*self._done)
+        self._journal.delete_records(self._uuid)
 
     def memoize(self, f: Callable[P, T], retries: int = 1, retry_interval: float = 2.0) \
             -> Callable[P, T]:
@@ -85,31 +85,30 @@ class Memoized:
         trace = ''
         while record.runs < retries:
             record.runs += 1
-            self._journal.update_record(record.idempotent_operation_id,
+            self._journal.update_record(record.uuid, record.operation_id,
                                         ['runs'], [record.runs])
             try:
                 r = spec.call()
-                self._journal.update_record(record.idempotent_operation_id,
+                self._journal.update_record(record.uuid, record.operation_id,
                                             ['status', 'result'],
                                             [JobStatus.DONE, self._obj_to_b(r)])
-                self._done.append(record.idempotent_operation_id)
                 return r
             except Exception as e:
                 exc = e
                 trace = traceback.format_exc()
                 if record.runs < retries:
                     time.sleep(retry_interval)
-        self._journal.update_record(record.idempotent_operation_id,
+        self._journal.update_record(record.uuid, record.operation_id,
                                     ['status', 'result'],
                                     [JobStatus.FAILED, self._obj_to_b(trace)])
         raise exc
 
-    def _next_op_id(self) -> str:
+    def _next_op_id(self) -> int:
         self._operation_id += 1
-        return f'{self._memo_prefix}_{self._operation_id}'
+        return self._operation_id
 
-    def _get_record(self, op_id: str) -> JobRecord:
-        record = self._journal.get_record(op_id)
+    def _get_record(self, op_id: int) -> JobRecord:
+        record = self._journal.get_record(self._uuid, op_id)
         if record is None:
-            record = self._journal.create_record(op_id)
+            record = self._journal.create_record(self._uuid, op_id)
         return record

@@ -2,8 +2,8 @@ import base64
 import pickle
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Generic, List, Optional, ParamSpec, Type, TypeVar
-
+from typing import Callable, Generic, Optional, ParamSpec, Type, TypeVar
+from uuid import UUID
 from pydantic import BaseModel
 
 P = ParamSpec('P')
@@ -32,29 +32,33 @@ class JobStatus(str, Enum):
 
 
 class SagaRecord(BaseModel):
-    idempotent_key: str
-    """ Идемпотентный уникальный ключ саги. """
+    uuid: UUID
+    """Уникальный идентификатор саги."""
+    saga_name: str
+    """Имя саги."""
     status: JobStatus = JobStatus.RUNNING
-    """ Текущий статус выполнения саги. """
+    """Текущий статус выполнения саги."""
     initial_data: bytes = base64.b64encode(Ok().model_dump_json().encode('utf8'))
-    """ Изначальные данные саги. """
+    """Изначальные данные саги."""
     traceback: Optional[str] = None
-    """ Трассировка ошибки. """
+    """Трассировка ошибки."""
     error: Optional[str] = None
-    """ Сообщение об ошибке. """
+    """Сообщение об ошибке."""
     failed_time: Optional[datetime] = None
-    """ Время возникновения ошибки. """
+    """Время возникновения ошибки."""
 
 
 class JobRecord(BaseModel):
-    idempotent_operation_id: str
-    """ Уникальный ключ операции. """
+    operation_id: int
+    """Ключ операции."""
+    uuid: UUID
+    """Идентификатор саги."""
     status: JobStatus = JobStatus.RUNNING
-    """ Текущий статус операции. """
+    """Текущий статус операции."""
     result: bytes = base64.b64encode(pickle.dumps(None))
-    """ Результат операции. """
+    """Результат операции."""
     runs: int = 0
-    """ Количество запусков. """
+    """Количество запусков."""
 
 
 class JobSpec(Generic[T, P]):
