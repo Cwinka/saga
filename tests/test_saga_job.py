@@ -12,7 +12,7 @@ def test_saga_job(saga_journal, worker):
     def foo(_worker: SagaWorker, _) -> int:
         return 1
 
-    job = SagaJob(saga_journal, worker, foo, Ok())
+    job = SagaJob(saga_journal, worker, foo, Ok(), {})
     assert isinstance(job, SagaJob)
 
 
@@ -22,7 +22,7 @@ def test_saga_job(saga_journal, worker):
 ])
 def test_saga_job_run(saga_journal, worker, test_function, expected_result):
 
-    job = SagaJob(saga_journal, worker, test_function, Ok())
+    job = SagaJob(saga_journal, worker, test_function, Ok(), {})
     job.run()
 
     result = job.wait()
@@ -42,11 +42,11 @@ def test_saga_job_idempotent(saga_journal, wk_journal, compensator, forget_done,
         return s
 
     uid = uuid.uuid4()
-    wk1 = SagaWorker(uid, '1', wk_journal, compensator, None)
-    wk2 = SagaWorker(uid, '1', wk_journal, compensator, None)
+    wk1 = SagaWorker(uid, '1', wk_journal, compensator, None, {})
+    wk2 = SagaWorker(uid, '1', wk_journal, compensator, None, {})
 
-    result1 = SagaJob(saga_journal, wk1, sum_return, Ok(), forget_done=forget_done).wait()
-    result2 = SagaJob(saga_journal, wk2, sum_return, Ok()).wait()
+    result1 = SagaJob(saga_journal, wk1, sum_return, Ok(), {}, forget_done=forget_done).wait()
+    result2 = SagaJob(saga_journal, wk2, sum_return, Ok(), {}).wait()
 
     assert assert_f(result1, result2), ('Запуск саг с одинаковыми ключами не дает ожидаемого '
                                         'результата.')
@@ -71,7 +71,7 @@ def test_saga_job_compensation(worker, saga_journal):
             _worker.job(JobSpec(lambda _x: _x, i))\
                 .with_compensation(JobSpec(compensate, i)).run()
 
-    job = SagaJob(saga_journal, worker, function, Ok())
+    job = SagaJob(saga_journal, worker, function, Ok(), {})
 
     try:
         job.wait()

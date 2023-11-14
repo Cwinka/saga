@@ -12,7 +12,7 @@ def saga(worker: SagaWorker, _: Ok) -> None:
 def make_incomplete_record(runner: SagaRunner, saga_journal: SagaJournal):
     # Симуляция незавершенной саги, которая могла возникнуть после неожиданного
     # завершения программы
-    saga_record = saga_journal.create_saga(uuid.uuid4(), runner.get_saga_name(saga))
+    saga_record = saga_journal.create_saga(uuid.uuid4(), runner.get_saga_name(saga), {})
     saga_record.initial_data = model_to_initial_data(Ok())
     saga_record.status = JobStatus.RUNNING
     saga_journal.update_saga(saga_record.uuid, ['initial_data', 'status'],

@@ -29,13 +29,13 @@ def compensator() -> SagaCompensator:
 @pytest.fixture()
 def communication_fk() -> CommunicationFactory:
     return RedisCommunicationFactory(redis.Redis('127.0.0.1', 6379,
-                                                 decode_responses=True, socket_timeout=0.1))
+                                                 decode_responses=True, socket_timeout=0.5))
 
 
 @pytest.fixture()
 def worker(communication_fk, wk_journal, compensator) -> SagaWorker:
     return SagaWorker(uuid.uuid4(), 'foo', journal=wk_journal,
-                      compensator=compensator, sender=communication_fk.sender())
+                      compensator=compensator, sender=communication_fk.sender(), metadata={})
 
 
 @pytest.fixture(params=[
@@ -53,4 +53,4 @@ def eager_runner(saga_journal, wk_journal) -> SagaRunner:
 
 @pytest.fixture()
 def memoized(wk_journal) -> Memoized:
-    return Memoized(uuid.uuid4(), wk_journal)
+    return Memoized(uuid.uuid4(), wk_journal, {})

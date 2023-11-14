@@ -3,7 +3,7 @@ import functools
 import pickle
 import time
 import traceback
-from typing import Any, Callable, ParamSpec, TypeVar
+from typing import Any, Callable, Dict, ParamSpec, TypeVar
 from uuid import UUID
 
 from saga.journal import WorkerJournal
@@ -35,10 +35,11 @@ class Memoized:
     """
     Memoized используется для сохранения результата работы функции.
     """
-    def __init__(self, uuid: UUID, journal: WorkerJournal,
+    def __init__(self, uuid: UUID, journal: WorkerJournal, metadata: Dict[str, Any],
                  obj_to_bytes: Callable[[Any], bytes] = object_to_bytes,
                  obj_from_bytes: Callable[[bytes], Any] = object_from_bytes):
         self._journal = journal
+        self._metadata = metadata
         self._uuid = uuid
         self._operation_id = 0
         self._obj_to_b = obj_to_bytes
@@ -110,5 +111,5 @@ class Memoized:
     def _get_record(self, op_id: int) -> JobRecord:
         record = self._journal.get_record(self._uuid, op_id)
         if record is None:
-            record = self._journal.create_record(self._uuid, op_id)
+            record = self._journal.create_record(self._uuid, op_id, self._metadata)
         return record

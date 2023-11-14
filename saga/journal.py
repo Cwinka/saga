@@ -21,7 +21,7 @@ class SagaJournal(ABC):
         """
 
     @abstractmethod
-    def create_saga(self, uuid: UUID, saga_name: str) -> SagaRecord:
+    def create_saga(self, uuid: UUID, saga_name: str, metadata: Dict[str, Any]) -> SagaRecord:
         """
         Создать новую запись ``SagaRecord`` с уникальным ключом ``uuid`` и именем ``saga_name``.
         """
@@ -64,7 +64,7 @@ class WorkerJournal(ABC):
         """
 
     @abstractmethod
-    def create_record(self,  uuid: UUID, operation_id: int) -> JobRecord:
+    def create_record(self,  uuid: UUID, operation_id: int, metadata: Dict[str, Any]) -> JobRecord:
         """
         Создать запись ``JobRecord``, с уникальным ключом ``uuid` и номером операции
         ``operation_id``.
@@ -101,7 +101,7 @@ class MemorySagaJournal(SagaJournal):
         with self._lock:
             return self._sagas.get(uuid)
 
-    def create_saga(self, uuid: UUID, saga_name: str) -> SagaRecord:
+    def create_saga(self, uuid: UUID, saga_name: str, metadata: Dict[str, Any]) -> SagaRecord:
         with self._lock:
             self._sagas[uuid] = SagaRecord(
                 uuid=uuid,
@@ -140,7 +140,7 @@ class MemoryJournal(WorkerJournal):
                 return group.get(operation_id)
             return None
 
-    def create_record(self, uuid: UUID, operation_id: int) -> JobRecord:
+    def create_record(self, uuid: UUID, operation_id: int, metadata: Dict[str, Any]) -> JobRecord:
         with self._lock:
             self._records[uuid][operation_id] = JobRecord(
                 uuid=uuid,
