@@ -1,4 +1,4 @@
-from typing import Any, Callable, Generic, List, Optional, ParamSpec, TypeVar
+from typing import Any, Callable, Dict, Generic, List, Optional, ParamSpec, TypeVar
 from uuid import UUID
 
 from saga.compensator import SagaCompensator
@@ -31,6 +31,7 @@ class SagaWorker:
 
     def __init__(self, uuid: UUID, saga_name: str, journal: WorkerJournal,
                  compensator: SagaCompensator, sender: Optional[EventSender],
+                 metadata: Dict[str, Any],
                  job_max_retries: int = 1, job_retry_interval: float = 2.0,
                  event_job_timeout: float = 5.0,
                  compensation_max_retries: int = 10, compensation_interval: float = 1,
@@ -40,6 +41,8 @@ class SagaWorker:
         :param saga_name: Имя саги.
         :param journal: Журнал для хранения результатов выполнения ``WorkerJob``.
         :param compensator: Объект ``SagaCompensator`` хранения компенсационных функций.
+        :param metadata: Метаданные саги. Переданные данные будут использованы при создании
+                         записей в базе данных, ассоциированных с созданной сагой.
         :param sender: Объект ``EventSender`` для отправки событий,
                        если опущенный метод ``event_job`` не может быть использован.
         :param job_max_retries: Максимальное количество повторов задания. При указании больше чем
@@ -56,7 +59,7 @@ class SagaWorker:
         """
         self._uuid = uuid
         self._saga_name = saga_name
-        self._memo = Memoized(uuid, journal)
+        self._memo = Memoized(uuid, journal, metadata)
         self._sender = sender
         self._journal = journal
         self._job_max_retries = job_max_retries

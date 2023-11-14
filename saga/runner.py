@@ -100,13 +100,16 @@ class SagaRunner:
         self._registered_sagas: Dict[str, Tuple[Saga[BaseModel, Any], Type[BaseModel]]] = {}
         self._registered_sagas_reversed: Dict[Saga[BaseModel, Any], str] = {}
 
-    def new(self, uuid: UUID, saga: Saga[M, T], data: M) -> SagaJob[T, M]:
+    def new(self, uuid: UUID, saga: Saga[M, T], data: M,
+            metadata: Optional[Dict[str, Any]] = None) -> SagaJob[T, M]:
         """
         Создать новый объект ``SagaJob``.
 
         :param uuid: Уникальный ключ саги.
         :param saga: Зарегистрированная функция саги.
         :param data: Входные данные саги.
+        :param metadata: Метаданные саги. Переданные данные будут использованы при создании
+                                          записей в базе данных, ассоциированных с созданной сагой.
         """
         saga_name = self.get_saga_name(saga)
         worker = SagaWorker(uuid=uuid,
@@ -119,11 +122,12 @@ class SagaRunner:
                             event_job_timeout=self._event_job_timeout,
                             compensation_max_retries=self._compensation_max_retries,
                             compensation_interval=self._compensation_interval,
-                            compensation_event_timeout=self._compensation_event_timeout)
+                            compensation_event_timeout=self._compensation_event_timeout,
+                            metadata=metadata or {})
         logger.info(f'{self._r_prefix} Создание контекста саги: Saga job: {uuid} Saga: '
                     f'{saga_name}.')
         return self._job_csl(self._saga_journal, worker, saga, data, forget_done=self._forget_done,
-                             model_to_b=self._model_to_b)
+                             model_to_b=self._model_to_b, metadata=metadata or {})
 
     def new_from(self, uuid: UUID, saga: Saga[M, T],
                  _record: Optional[SagaRecord] = None) -> Optional[SagaJob[T, M]]:

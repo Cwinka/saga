@@ -5,7 +5,7 @@ import multiprocessing.pool
 import os
 import traceback
 from collections.abc import Callable
-from typing import Any, Generic, List, Optional, ParamSpec, Type, TypeVar
+from typing import Any, Dict, Generic, List, Optional, ParamSpec, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -58,8 +58,9 @@ class SagaJob(Generic[T, M]):
     _pool = multiprocessing.pool.ThreadPool(os.cpu_count())
 
     def __init__(self, journal: SagaJournal, worker: SagaWorker, saga: Saga[M, T],
-                 data: M, forget_done: bool = False,
-                 model_to_b: Callable[[M], bytes] = model_to_initial_data) -> None:
+                 data: M, metadata: Dict[str, Any],
+                 forget_done: bool = False,
+                 model_to_b: Callable[[M], bytes] = model_to_initial_data,) -> None:
         """
         :param journal: Журнал саги.
         :param worker: Обработчик функций саги.
@@ -68,9 +69,12 @@ class SagaJob(Generic[T, M]):
         :param forget_done: Если значение True, то по завершении все сохраненные записи журналов
                             удаляться и сага может быть запущена с тем же идемпотентным ключом.
         :param model_to_b: Функция конвертации модели данных в байты.
+        :param metadata: Метаданные саги. Переданные данные будут использованы при создании
+                                          записей в базе данных, ассоциированных с созданной сагой.
         """
         self._journal = journal
         self._worker = worker
+        self._metadata = metadata
         self._f_with_compensation = self._compensate_on_exception(saga)
         self._forget_done = forget_done
         self._data = data
@@ -103,7 +107,7 @@ class SagaJob(Generic[T, M]):
 
     def _create_initial_saga_record(self) -> None:
         if self._journal.get_saga(self._worker.uuid) is None:
-            self._journal.create_saga(self._worker.uuid, self._worker.saga_name)
+            self._journal.create_saga(self._worker.uuid, self._worker.saga_name, self._metadata)
             self._journal.update_saga(self._worker.uuid,
                                       ['initial_data'],
                                       [self._model_to_b(self._data)])
