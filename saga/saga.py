@@ -5,14 +5,14 @@ import multiprocessing.pool
 import os
 import traceback
 from collections.abc import Callable
-from typing import Any, Concatenate, Generic, List, Optional, ParamSpec, Type, TypeVar
+from typing import Any, Generic, List, Optional, ParamSpec, Type, TypeVar
 
 from pydantic import BaseModel
 
 from saga.journal import SagaJournal
 from saga.logger import logger
-from saga.models import JobStatus, M, SagaRecord
-from saga.worker import SagaWorker, split_key
+from saga.models import JobStatus, M
+from saga.worker import SagaWorker
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -76,8 +76,7 @@ class SagaJob(Generic[T, M]):
         self._data = data
         self._model_to_b = model_to_b
         self._result: Optional[multiprocessing.pool.ApplyResult[T]] = None
-        uuid, saga_name = split_key(worker.idempotent_key)
-        self._s_prefix = f'[Saga job: {uuid} Saga: {saga_name}]'
+        self._s_prefix = f'[Saga job: {worker.uuid} Saga: {worker.saga_name}]'
 
     def run(self) -> None:
         """
@@ -103,9 +102,9 @@ class SagaJob(Generic[T, M]):
         return self._result.get(timeout)
 
     def _create_initial_saga_record(self) -> None:
-        if self._journal.get_saga(self._worker.idempotent_key) is None:
-            self._journal.create_saga(self._worker.idempotent_key)
-            self._journal.update_saga(self._worker.idempotent_key,
+        if self._journal.get_saga(self._worker.uuid) is None:
+            self._journal.create_saga(self._worker.uuid, self._worker.saga_name)
+            self._journal.update_saga(self._worker.uuid,
                                       ['initial_data'],
                                       [self._model_to_b(self._data)])
 
@@ -133,15 +132,15 @@ class SagaJob(Generic[T, M]):
                 logger.info(f'{self._s_prefix} Сага завершена с исключением.')
                 raise
             finally:
-                record = self._journal.get_saga(self._worker.idempotent_key)
+                record = self._journal.get_saga(self._worker.uuid)
                 if record is None:
                     logger.warning(f'{self._s_prefix} Запись в журнале о саге '
-                                   f'"{self._worker.idempotent_key}" не найдена. Невозможно '
-                                   f'обновить состояние саги.')
+                                   f'"{self._worker.saga_name}" c uuid: {self._worker.uuid} '
+                                   f'не найдена. Невозможно обновить состояние саги.')
                 else:
-                    self._journal.update_saga(record.idempotent_key, fields, values)
+                    self._journal.update_saga(record.uuid, fields, values)
                     if self._forget_done:
-                        self._journal.delete_sagas(record.idempotent_key)
+                        self._journal.delete_sagas(record.uuid)
                         self._worker.forget_done()
         return wrap
 

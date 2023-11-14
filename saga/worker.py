@@ -1,4 +1,4 @@
-from typing import Any, Callable, Generic, List, Optional, ParamSpec, Tuple, TypeVar
+from typing import Any, Callable, Generic, List, Optional, ParamSpec, TypeVar
 from uuid import UUID
 
 from saga.compensator import SagaCompensator
@@ -56,8 +56,7 @@ class SagaWorker:
         """
         self._uuid = uuid
         self._saga_name = saga_name
-        self._idempotent_key = join_key(uuid, saga_name)
-        self._memo = Memoized(self._idempotent_key, journal)
+        self._memo = Memoized(uuid, journal)
         self._sender = sender
         self._journal = journal
         self._job_max_retries = job_max_retries
@@ -70,23 +69,17 @@ class SagaWorker:
         self._w_prefix = f'[Saga worker: {uuid} Saga: {saga_name}]'
 
     @property
-    def idempotent_key(self) -> str:
-        """
-        Уникальный идемпотентный ключ ``SagaWorker``.
-        """
-        return self._idempotent_key
+    def saga_name(self) -> str:
+        """Имя саги."""
+        return self._saga_name
 
     @property
     def uuid(self) -> UUID:
-        """
-        Уникальный идентификатор ``SagaWorker``.
-        """
+        """Уникальный идентификатор ``SagaWorker``."""
         return self._uuid
 
     def compensate(self) -> None:
-        """
-        Запустить все компенсационные функции.
-        """
+        """Запустить все компенсационные функции."""
         logger.info(f'{self._w_prefix} Запуск заданий компенсаций.')
         self._compensate.run()
 
@@ -162,19 +155,6 @@ class SagaWorker:
                                     retry_interval=self._compensation_interval)
         logger.debug(f'{self._w_prefix} Добавление простого задания компенсации "{spec.name}".')
         self._compensate.add_compensate(spec)
-
-
-def join_key(uuid: UUID, saga_name: str) -> str:
-    """
-    Вернуть строку, которую можно использовать для получения объекта
-    ``SagaRecord`` из ``SagaJournal``.
-    """
-    return f'{uuid}{SAGA_KEY_SEPARATOR}{saga_name}'
-
-
-def split_key(joined_key: str) -> Tuple[str, str]:
-    uuid, *name = joined_key.split(SAGA_KEY_SEPARATOR)
-    return uuid, ''.join(name)
 
 
 class WorkerParametrizedChain(Generic[InputData, LastChainResult]):

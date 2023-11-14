@@ -9,7 +9,7 @@ from saga.journal import MemoryJournal, MemorySagaJournal, SagaJournal, WorkerJo
 from saga.logger import logger
 from saga.models import M, SagaRecord
 from saga.saga import Saga, SagaJob, EagerSagaJob, model_from_initial_data, model_to_initial_data
-from saga.worker import SagaWorker, join_key, split_key
+from saga.worker import SagaWorker
 
 T = TypeVar('T')
 SAGA_NAME_ATTR = '__saga_name__'
@@ -133,12 +133,10 @@ class SagaRunner:
         состоянии.
         """
         saga_name = self.get_saga_name(saga)
-        record = _record if _record is not None else self._saga_journal.get_saga(
-            join_key(uuid, saga_name)
-        )
+        record = _record if _record is not None else self._saga_journal.get_saga(uuid)
         if record is None:
             return None
-        model: Type[M] = self.get_saga(saga_name)[1]
+        model: Type[M] = self.get_saga(saga_name)[1]  # type: ignore[assignment]
         logger.info(f'{self._r_prefix} Воссоздание саги: Saga job: {uuid} Saga: {saga_name}.')
         return self.new(uuid, saga, self._model_from_b(model, record.initial_data))
 
@@ -150,9 +148,8 @@ class SagaRunner:
         i = 0
         logger.info(f'{self._r_prefix} Перезапуск незавершенных саг.')
         for i, record in enumerate(self._saga_journal.get_incomplete_saga(), 1):
-            uuid, saga_name = split_key(record.idempotent_key)
-            saga_f, _ = self.get_saga(saga_name)
-            self.new_from(UUID(uuid), saga_f, _record=record).run()  # type: ignore[union-attr]
+            saga_f, _ = self.get_saga(record.saga_name)
+            self.new_from(record.uuid, saga_f, _record=record).run()  # type: ignore[union-attr]
         return i
 
     def register_saga(self, name: str, saga: Saga[M, Any], model: Type[M]) -> None:
@@ -190,14 +187,12 @@ class SagaRunner:
         assert name is not None, self._not_a_saga_msg(saga)
         return name
 
-    def get_saga_record_by_uid(self, idempotent_key: UUID, saga: Saga[M, Any]) \
-            -> Optional[SagaRecord]:
+    def get_saga_record_by_uid(self, uuid: UUID) -> Optional[SagaRecord]:
         """
         Получить запись о состоянии запущенной саги saga, с идемпотентным ключом
-        idempotent_key.
+        ``idempotent_key``.
         """
-        key = join_key(idempotent_key, self.get_saga_name(saga))
-        return self._saga_journal.get_saga(key)
+        return self._saga_journal.get_saga(uuid)
 
     def _not_a_saga_msg(self, f: Callable[..., Any]) -> str:
         return (f'Функция "{f.__name__}" не является сагой. '
