@@ -28,7 +28,7 @@ def registered_eager_saga(eager_runner) -> Callable[[SagaWorker, Ok], int]:
 @pytest.fixture()
 def runner_with_incomplete_saga(saga_journal, registered_saga, runner):
     key = uuid.uuid4()
-    saga_journal.create_saga(key, runner.get_saga_name(registered_saga))
+    saga_journal.create_saga(key, runner.get_saga_name(registered_saga), {})
     saga_journal.update_saga(key, ['status'], [JobStatus.RUNNING])
     return runner
 
@@ -36,7 +36,7 @@ def runner_with_incomplete_saga(saga_journal, registered_saga, runner):
 @pytest.fixture()
 def runner_with_failed_saga(saga_journal, registered_saga, runner):
     key = uuid.uuid4()
-    saga_journal.create_saga(key, runner.get_saga_name(registered_saga))
+    saga_journal.create_saga(key, runner.get_saga_name(registered_saga), {})
     saga_journal.update_saga(key, ['status'], [JobStatus.FAILED])
     return runner
 

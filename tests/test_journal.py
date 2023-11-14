@@ -23,7 +23,7 @@ def test_get(job_record):
 def test_create(job_record):
     dct = {}
     journal = MemoryJournal(dct)
-    journal.create_record(job_record.uuid, job_record.operation_id)
+    journal.create_record(job_record.uuid, job_record.operation_id, {})
     assert journal.get_record(job_record.uuid, job_record.operation_id) is not None
 
 
